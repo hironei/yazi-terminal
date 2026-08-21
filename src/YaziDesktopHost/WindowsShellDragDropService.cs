@@ -278,6 +278,7 @@ public sealed class WindowsShellDragDropService : IDisposable
 
     private ShellFolderDropTarget? _shellTarget;
     private string? _shellTargetPath;
+    private ComDataObject? _dropDataObject;
 
     private void ForwardDragEnter(
         ComDataObject dataObject,
@@ -295,6 +296,7 @@ public sealed class WindowsShellDragDropService : IDisposable
 
         _shellTarget = shellTarget!;
         _shellTargetPath = path;
+        _dropDataObject = dataObject;
         try
         {
             _shellTarget.DragEnter(dataObject, keyState, point, ref effect);
@@ -317,6 +319,28 @@ public sealed class WindowsShellDragDropService : IDisposable
 
         try
         {
+            if (!TryResolveCurrentDirectory(out var path))
+            {
+                effect = DropEffectNone;
+                return;
+            }
+
+            if (!string.Equals(_shellTargetPath, path, StringComparison.OrdinalIgnoreCase))
+            {
+                var dataObject = _dropDataObject;
+                ForwardDragLeave();
+                if (dataObject is null || !TryCreateShellTarget(path, out var shellTarget))
+                {
+                    effect = DropEffectNone;
+                    return;
+                }
+
+                _shellTarget = shellTarget!;
+                _shellTargetPath = path;
+                _dropDataObject = dataObject;
+                _shellTarget.DragEnter(dataObject, keyState, point, ref effect);
+            }
+
             _shellTarget.DragOver(keyState, point, ref effect);
         }
         catch (Exception exception)
@@ -390,6 +414,7 @@ public sealed class WindowsShellDragDropService : IDisposable
         _shellTarget?.Dispose();
         _shellTarget = null;
         _shellTargetPath = null;
+        _dropDataObject = null;
     }
 
     private bool TryResolveCurrentDirectory(out string path)

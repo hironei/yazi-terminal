@@ -6,9 +6,12 @@ The attached product requirement is a product specification, not an
 instruction to copy or implement every proposal verbatim. This phase resolves
 its drag-and-drop requirements into a bounded Windows OLE/Shell slice.
 
-Phase 4 adds bidirectional drag-and-drop around the embedded Yazi terminal.
-Yazi remains authoritative for selection and current directory state. The host
-must not parse terminal output or implement its own file-operation policy.
+Phase 4 covers the Yazi-to-Explorer direction around the embedded terminal.
+The shared OLE registration boundary is implemented alongside this slice so
+Phase 5 can add Explorer-to-Yazi without a second input interception path;
+Phase 5 has its own acceptance document. Yazi remains authoritative for
+selection and current directory state. The host must not parse terminal output
+or implement its own file-operation policy.
 
 ## Functional requirements
 
@@ -18,13 +21,6 @@ must not parse terminal output or implement its own file-operation policy.
   - Expose the paths as a standard Shell file-drop data object.
   - Start the drag only after the normal left-button movement threshold is
     crossed; ordinary clicks and Yazi mouse input remain untouched.
-- Explorer/Desktop to Yazi:
-  - Accept an OLE drop over the embedded terminal HWND.
-  - Resolve the destination from the latest available filesystem `cwd`.
-  - Delegate the incoming data object to the Shell folder `IDropTarget` for
-    that directory, preserving Shell copy/move/link negotiation, prompts,
-    overwrite behavior, elevation, cancellation, and cross-volume handling.
-  - Do not copy, move, overwrite, or delete files in host code.
 - A missing, unavailable, stale, or non-filesystem bridge state rejects the
   operation without invoking a Shell API.
 - A Shell/OLE/HRESULT failure is contained at the feature boundary and is
@@ -34,9 +30,8 @@ must not parse terminal output or implement its own file-operation policy.
 ## Non-goals
 
 - A custom drag image, custom copy/move rules, or a replacement for Explorer.
-- Dropping onto a particular Yazi pane or hovered item; v1 targets `cwd`.
 - Parsing `CF_HDROP` paths to implement a second file-operation pipeline.
-- Dragging arbitrary terminal text, URLs, or non-filesystem Yazi resources.
+- Explorer-to-Yazi drop behavior; that is Phase 5.
 - Claiming GUI acceptance from unit tests or a headless build.
 
 ## Compatibility and safety
@@ -59,8 +54,6 @@ must not parse terminal output or implement its own file-operation policy.
   - one selected file drags to Explorer/Desktop;
   - multiple selected files drag as one set;
   - no selection falls back to hovered file;
-  - Explorer/Desktop can drop files and directories into `cwd`;
-  - Ctrl/Shift and same-/cross-volume behavior follows Shell negotiation;
   - ordinary Yazi click, hover, keyboard, mouse reporting, IME, and resize
     behavior remain intact;
   - closing the host revokes OLE registration and leaves no owned process.
@@ -70,6 +63,5 @@ must not parse terminal output or implement its own file-operation policy.
 
 - The EasyWindowsTerminalControl hosted HWND may impose airspace and native
   drag-loop constraints; actual Explorer interaction is a manual gate.
-- Third-party Shell extensions, cloud placeholders, virtual files, elevation
-  prompts, and cancellation are compatibility observations rather than
-  headless guarantees.
+- Third-party Shell extensions and destination-side behavior are outside this
+  source-direction gate and are covered by Phase 5 where applicable.

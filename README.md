@@ -19,6 +19,8 @@ The reviewed scope and known blockers are documented in:
 - [Phase 3 Shell context-menu design](docs/design-phase3-shell-context-menu.md)
 - [Phase 4 drag-and-drop requirements](docs/requirements-phase4-drag-drop.md)
 - [Phase 4 drag-and-drop design](docs/design-phase4-drag-drop.md)
+- [Phase 5 Explorer-to-Yazi drop requirements](docs/requirements-phase5-explorer-to-yazi-drop.md)
+- [Phase 5 Explorer-to-Yazi drop design](docs/design-phase5-explorer-to-yazi-drop.md)
 
 Run the host with the .NET 10 SDK from the repository root:
 
