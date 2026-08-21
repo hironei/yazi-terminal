@@ -11,6 +11,7 @@ The reviewed scope and known blockers are documented in:
 - [Terminal host candidate evaluation](docs/terminal-host-evaluation.md)
 - [Phase 2 bridge requirements](docs/requirements-phase2-yazi-bridge.md)
 - [Phase 2 bridge design](docs/design-phase2-yazi-bridge.md)
+- [Phase 2 Yazi event investigation](docs/phase2-yazi-event-investigation.md)
 
 Run the host with the .NET 10 SDK from the repository root:
 
