@@ -68,18 +68,17 @@ ConPTY supplies a pseudoconsole stream; it does not render a WPF terminal.
 The requirement names ConPTY but leaves the VT renderer and its dependency,
 native assets, license, input/IME behavior, and maintenance policy undefined.
 Phase 1 cannot be accepted until one renderer is selected and validated on the
-target framework. The provisional design evaluates the `VirtualTerminal`
-packages because their published documentation targets .NET 10 and exposes a
-WPF control plus a ConPTY-backed session. Adding that package is a dependency
-change and requires explicit user approval under the repository instructions.
+target framework. The initial review evaluated the `VirtualTerminal` packages;
+the current implementation instead evaluates `EasyWindowsTerminalControl`,
+which combines a Windows Terminal WPF control with ConPTY. This dependency
+change was explicitly requested for the current pipeline run.
 
-The first implementation candidate is `VirtualTerminal.WPF` /
-`VirtualTerminal.CommandLine`, but this is an evaluation target, not an
-adoption decision. It must be tested with a real Yazi process for VT rendering,
-alternate screen, Unicode/CJK, IME, keyboard input, xterm mouse reporting, and
-resize. If any required behavior is insufficient, compare a WPF Terminal
-Control derived from the Microsoft Windows Terminal implementation before
-selecting the production backend.
+`EasyWindowsTerminalControl` is an evaluation target, not an adoption decision.
+The real Yazi run passed CJK, IME, keyboard input, mouse reporting, resize, and
+normal full-screen rendering. Deterministic 24-bit color and unexpected child
+exit observation remain open gates. If any required behavior is insufficient,
+compare a WPF Terminal Control derived from the Microsoft Windows Terminal
+implementation before selecting the production backend.
 
 ### MAJOR-2: bridge protocol and Yazi compatibility range are undefined
 
@@ -171,7 +170,7 @@ host, DI framework, update check, or eager Shell integration.
 
 ## Terminal host evaluation gate
 
-The first candidate must pass a real Windows/Yazi compatibility check for all
+The current candidate must pass a real Windows/Yazi compatibility check for all
 of the following before adoption:
 
 - VT output and 24-bit color

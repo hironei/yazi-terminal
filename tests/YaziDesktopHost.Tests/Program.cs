@@ -15,7 +15,8 @@ var tests = new (string Name, Action Test)[]
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
-    ("Yazi process info uses bridge identity", YaziProcessInfoUsesBridgeIdentity),
+    ("Yazi command line uses bridge identity", YaziCommandLineUsesBridgeIdentity),
+    ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
 };
 
 var failures = new List<string>();
@@ -289,19 +290,53 @@ static void WaitUntil(Func<bool> condition)
     }
 }
 
-static void YaziProcessInfoUsesBridgeIdentity()
+static void YaziCommandLineUsesBridgeIdentity()
 {
-    var instanceId = Guid.NewGuid();
-    var processInfo = YaziProcessCreationInfoFactory.Create(
-        @"C:\tools\yazi.exe",
-        @"C:\work",
-        instanceId,
-        $"yazi-desktop-host-{instanceId:N}");
-
-    var commandLine = processInfo.CommandLine ?? string.Empty;
+    var commandLine = YaziProcessLaunchConfiguration.CreateCommandLine(@"C:\tools\yazi.exe");
     var clientId = commandLine.Split("--client-id ", StringSplitOptions.None).Last();
     Assert(long.TryParse(clientId, out var numericClientId) && numericClientId > 0);
-    Assert(processInfo.Environment is null);
+}
+
+static void BridgeEnvironmentScopeRestoresValues()
+{
+    var names = new[]
+    {
+        "YAZI_DESKTOP_HOST_PIPE",
+        "YAZI_DESKTOP_HOST_INSTANCE_ID",
+        "YAZI_DESKTOP_HOST_PROTOCOL",
+    };
+    var previousValues = names.ToDictionary(
+        name => name,
+        name => Environment.GetEnvironmentVariable(name),
+        StringComparer.OrdinalIgnoreCase);
+
+    try
+    {
+        foreach (var name in names)
+        {
+            Environment.SetEnvironmentVariable(name, $"previous-{name}");
+        }
+
+        var instanceId = Guid.NewGuid();
+        using (YaziProcessLaunchConfiguration.EnterBridgeEnvironment(instanceId, @"\\.\pipe\yazi-test"))
+        {
+            Assert(Environment.GetEnvironmentVariable("YAZI_DESKTOP_HOST_PIPE") == @"\\.\pipe\yazi-test");
+            Assert(Environment.GetEnvironmentVariable("YAZI_DESKTOP_HOST_INSTANCE_ID") == instanceId.ToString("D"));
+            Assert(Environment.GetEnvironmentVariable("YAZI_DESKTOP_HOST_PROTOCOL") == YaziBridgeMessageParser.SupportedProtocol);
+        }
+
+        foreach (var name in names)
+        {
+            Assert(Environment.GetEnvironmentVariable(name) == $"previous-{name}");
+        }
+    }
+    finally
+    {
+        foreach (var (name, value) in previousValues)
+        {
+            Environment.SetEnvironmentVariable(name, value);
+        }
+    }
 }
 
 static byte[] SnapshotFrame(Guid instanceId, ulong sequence) => Frame(

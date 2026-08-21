@@ -1,12 +1,9 @@
 using System.Security.Cryptography;
-using VirtualTerminal;
-using VirtualTerminal.Interop;
 
 namespace YaziDesktopHost;
 
-public static class YaziProcessCreationInfoFactory
+public static class YaziProcessLaunchConfiguration
 {
-    private static readonly object EnvironmentGate = new();
     private static readonly string[] BridgeEnvironmentNames =
     [
         "YAZI_DESKTOP_HOST_PIPE",
@@ -14,46 +11,21 @@ public static class YaziProcessCreationInfoFactory
         "YAZI_DESKTOP_HOST_PROTOCOL",
     ];
 
-    public static ProcessCreationInfo Create(
-        string executable,
-        string currentDirectory,
-        Guid instanceId,
-        string pipeName)
+    public static string CreateCommandLine(string executable)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(executable);
-        ArgumentException.ThrowIfNullOrWhiteSpace(currentDirectory);
+        return $"{Quote(executable)} --client-id {CreateClientId()}";
+    }
+
+    public static IDisposable EnterBridgeEnvironment(Guid instanceId, string pipeName)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(pipeName);
         if (instanceId == Guid.Empty)
         {
             throw new ArgumentException("The bridge instance identifier must not be empty.", nameof(instanceId));
         }
 
-        return new ProcessCreationInfo
-        {
-            ApplicationName = executable,
-            // Yazi's --client-id parser accepts a globally unique number, not
-            // the GUID used by the host-side bridge contract.
-            CommandLine = $"{Quote(executable)} --client-id {CreateClientId()}",
-            CurrentDirectory = currentDirectory,
-        };
-    }
-
-    public static CommandLineSession StartSession(
-        string executable,
-        string currentDirectory,
-        Guid instanceId,
-        string pipeName)
-    {
-        var processInfo = Create(executable, currentDirectory, instanceId, pipeName);
-        lock (EnvironmentGate)
-        {
-            // VirtualTerminal.CommandLine 1.8.1 passes ProcessCreationInfo.Environment
-            // to CreateProcess without CREATE_UNICODE_ENVIRONMENT. Temporarily setting
-            // the host environment lets CreateProcess inherit the bridge values while
-            // avoiding that incompatible environment-block path.
-            using var environment = new BridgeEnvironmentScope(instanceId, pipeName);
-            return new CommandLineSession(processInfo);
-        }
+        return new BridgeEnvironmentScope(instanceId, pipeName);
     }
 
     private static string Quote(string value)

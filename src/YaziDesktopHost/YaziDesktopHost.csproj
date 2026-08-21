@@ -9,8 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="VirtualTerminal.WPF" Version="1.8.1" />
-    <PackageReference Include="VirtualTerminal.CommandLine" Version="1.8.1" />
+    <PackageReference Include="EasyWindowsTerminalControl" Version="1.0.38" />
   </ItemGroup>
 
 </Project>

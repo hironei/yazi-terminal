@@ -1,14 +1,18 @@
 using System.ComponentModel;
 using System.Windows;
-using VirtualTerminal;
+using System.Windows.Media;
+using EasyWindowsTerminalControl;
+using Microsoft.Terminal.Wpf;
 
 namespace YaziDesktopHost;
 
 public partial class MainWindow : Window
 {
-    private CommandLineSession? _session;
+    private EasyTerminalControl? _terminal;
+    private TermPTY? _term;
     private YaziBridgePipeServer? _bridgeServer;
     private YaziBridgeSession? _bridgeSession;
+    private IDisposable? _bridgeEnvironment;
     private bool _isClosing;
 
     public MainWindow()
@@ -18,7 +22,7 @@ public partial class MainWindow : Window
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
-        if (_session is not null)
+        if (_terminal is not null)
         {
             return;
         }
@@ -32,14 +36,22 @@ public partial class MainWindow : Window
             _bridgeSession.Disconnected += Bridge_Disconnected;
             _ = _bridgeSession.RunAsync();
 
-            _session = YaziProcessCreationInfoFactory.StartSession(
-                executable,
-                Environment.CurrentDirectory,
+            _bridgeEnvironment = YaziProcessLaunchConfiguration.EnterBridgeEnvironment(
                 instanceId,
                 _bridgeServer.PipePath);
-            _session.Disconnected += Session_Disconnected;
-            Terminal.Session = _session;
-            Terminal.Focus();
+            _term = new TermPTY();
+            _terminal = new EasyTerminalControl
+            {
+                StartupCommandLine = YaziProcessLaunchConfiguration.CreateCommandLine(executable),
+                WorkingDirectory = Environment.CurrentDirectory,
+                ConPTYTerm = _term,
+                Theme = CreateTerminalTheme(),
+                FontFamilyWhenSettingTheme = new FontFamily("MS Gothic"),
+                FontSizeWhenSettingTheme = 14,
+                Win32InputMode = true,
+            };
+            TerminalHost.Children.Add(_terminal);
+            _terminal.Focus();
         }
         catch (YaziExecutableNotFoundException)
         {
@@ -63,42 +75,17 @@ public partial class MainWindow : Window
         DisposeSession();
     }
 
-    private void Session_Disconnected(object? sender, EventArgs e)
-    {
-        Dispatcher.BeginInvoke(new Action(() =>
-        {
-            if (_isClosing)
-            {
-                return;
-            }
-
-            AppLogger.Log("yazi_session_disconnected");
-            _isClosing = true;
-            DisposeSession();
-            MessageBox.Show(
-                this,
-                "Yazi stopped unexpectedly. See the application log for details.",
-                "Yazi Desktop Host",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-            Close();
-        }));
-    }
-
     private void DisposeSession()
     {
+        _terminal?.DisconnectConPTYTerm();
+        _term?.CloseStdinToApp();
+        _term?.StopExternalTermOnly();
+        _terminal = null;
+        _term = null;
+        TerminalHost.Children.Clear();
+        _bridgeEnvironment?.Dispose();
+        _bridgeEnvironment = null;
         DisposeBridge();
-
-        if (_session is null)
-        {
-            Terminal.Session = null;
-            return;
-        }
-
-        _session.Disconnected -= Session_Disconnected;
-        Terminal.Session = null;
-        _session.Dispose();
-        _session = null;
     }
 
     private void DisposeBridge()
@@ -129,5 +116,40 @@ public partial class MainWindow : Window
         AppLogger.Log("yazi_start_unavailable");
         MessageBox.Show(this, message, "Yazi Desktop Host", MessageBoxButton.OK, MessageBoxImage.Error);
         Close();
+    }
+
+    private static TerminalTheme CreateTerminalTheme()
+    {
+        return new TerminalTheme
+        {
+            DefaultBackground = Rgb(0, 0, 0),
+            DefaultForeground = Rgb(255, 255, 255),
+            DefaultSelectionBackground = Rgb(30, 90, 160),
+            CursorStyle = CursorStyle.SteadyBlock,
+            ColorTable =
+            [
+                Rgb(0, 0, 0),
+                Rgb(0, 0, 128),
+                Rgb(0, 128, 0),
+                Rgb(0, 128, 128),
+                Rgb(128, 0, 0),
+                Rgb(128, 0, 128),
+                Rgb(128, 128, 0),
+                Rgb(192, 192, 192),
+                Rgb(128, 128, 128),
+                Rgb(0, 0, 255),
+                Rgb(0, 255, 0),
+                Rgb(0, 255, 255),
+                Rgb(255, 0, 0),
+                Rgb(255, 0, 255),
+                Rgb(255, 255, 0),
+                Rgb(255, 255, 255),
+            ],
+        };
+    }
+
+    private static uint Rgb(byte red, byte green, byte blue)
+    {
+        return EasyTerminalControl.ColorToVal(Color.FromRgb(red, green, blue));
     }
 }

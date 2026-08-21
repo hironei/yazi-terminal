@@ -42,13 +42,14 @@ to be replaced independently.
 
 The host must never infer successful bridge startup from a visible Yazi screen.
 
-`VirtualTerminal.CommandLine` 1.8.1 cannot currently receive the bridge
-environment as a custom `ProcessCreationInfo.Environment` block: its
-`CreateProcess` path does not set the Unicode-environment creation flag. The
-host therefore sets the three bridge variables only while the synchronous
-`CommandLineSession` constructor creates the child, under a process-local
-gate, and restores the host environment immediately afterward. This is a
-package-compatibility workaround, not a user configuration change.
+The current Easy implementation does not expose a custom child environment
+block. `EasyTerminalControl` starts `TermPTY` from its loaded path and the
+startup is asynchronous, so the host sets the three bridge variables before
+adding the control and keeps that process-local environment scope until window
+shutdown. The scope is restored on cleanup and is not a user configuration
+change. This is a package-compatibility workaround; a future explicit
+environment API should replace it because process environment variables are
+shared by the host process while the scope is active.
 
 ## Transport framing and security
 

@@ -1,8 +1,10 @@
 # Yazi Desktop Host
 
 Initial Phase 1 implementation of a Windows WPF host for the ordinary Yazi
-terminal file manager. The first terminal candidate is integrated for
-evaluation, not yet selected as the production backend.
+terminal file manager. `EasyWindowsTerminalControl` 1.0.38 is currently the
+leading terminal candidate for evaluation, not yet the selected production
+backend. It hosts the Windows Terminal renderer and ConPTY through a native
+terminal control.
 
 The reviewed scope and known blockers are documented in:
 

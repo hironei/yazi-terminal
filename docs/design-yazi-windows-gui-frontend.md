@@ -27,21 +27,24 @@ VT output and render an alternate screen, cursor, colors, Unicode, input, and
 resize. A renderer is therefore a required dependency rather than an optional
 implementation detail.
 
-The first candidate for evaluation is the `VirtualTerminal` package family:
+The current candidate for evaluation is `EasyWindowsTerminalControl` 1.0.38:
 
-- `VirtualTerminal.WPF` provides the WPF `TerminalControl`.
-- `VirtualTerminal.CommandLine` provides the Windows ConPTY-backed
-  `CommandLineSession`.
-- The published package documentation targets `net10.0`/`net10.0-windows` and
-  exposes direct input, mouse reporting, clipboard commands, and resize.
+- It hosts the official Windows Terminal WPF control and uses the packaged
+  ConPTY implementation through `TermPTY`.
+- `EasyTerminalControl` owns the terminal surface, input, theme, font, and
+  startup command configuration; `TermPTY` owns the child process and PTY
+  stream.
+- The package provides the native renderer/input path, including mouse and
+  resize APIs, but its low-level/beta dependency surface and native HWND
+  airspace behavior remain compatibility risks.
 
-This is not an adoption decision. A real Windows/Yazi compatibility run must
-cover VT output, alternate screen, Unicode/CJK, IME, keyboard input, xterm
-mouse reporting, and resize. The result is recorded per capability. If the
-candidate is insufficient, compare a WPF Terminal Control derived from the
-Microsoft Windows Terminal implementation before choosing the production
-backend. Until that gate passes, the backend remains replaceable behind the
-session/control boundary.
+This is not an adoption decision. The Easy run passed Yazi CJK display,
+keyboard, mouse, resize, IME candidate position, and normal full-screen
+rendering. Deterministic 24-bit color and unexpected child-exit observation
+remain open. If a required behavior is insufficient, compare a source-derived
+Microsoft WPF Terminal Control before choosing the production backend. Until
+that gate passes, the backend remains replaceable behind the session/control
+boundary.
 
 Adding the candidate package is a dependency change and requires explicit
 approval under the repository instructions. If no candidate passes the gate,
@@ -56,21 +59,22 @@ WPF `TextBox` or parsing screen text.
 3. If resolution fails, show a bounded user-facing error and log only the
    failure category and executable name.
 4. Start the session in the host process working directory for this slice.
-5. Use the terminal package's own process/ConPTY creation and disposal API;
-   do not add a second process wrapper unless the package cannot expose the
-   required lifecycle hooks.
+5. Use Easy's `TermPTY` process/ConPTY creation and disposal API; do not add a
+   second process wrapper unless the package cannot expose the required
+   lifecycle hooks.
 
 ## Lifecycle and error boundaries
 
 - Session startup happens after the WPF window is loaded so the control has a
   valid terminal geometry.
-- Terminal output and the session API's `Disconnected` notification are
-  marshaled to the WPF dispatcher only for UI state/error reporting. The
-  current candidate does not expose a child-process exit event through its
-  public session API, so direct exit observation remains an explicit backend
-  acceptance gate.
-- Window close is idempotent: stop accepting new input, dispose the session,
-  await or observe child termination, then allow WPF shutdown.
+- Easy starts its child from the terminal control's loaded path. The bridge
+  environment scope must therefore remain active until that asynchronous
+  startup path has created the child; it is restored during window shutdown.
+- The public `TermPTY` API does not expose a child-process exit event. Window
+  close calls `DisconnectConPTYTerm`, closes PTY stdin, and stops the external
+  terminal process; unexpected-exit observation remains an explicit gate.
+- Window close is idempotent: stop accepting new input, close the bridge,
+  disconnect the control, stop the PTY child, then allow WPF shutdown.
 - Startup failures are classified as executable resolution, ConPTY/session
   creation, or child-start failure. The UI reports a short message; diagnostic
   logs do not include terminal contents.
@@ -93,7 +97,8 @@ The host will never inspect the terminal screen buffer for these values.
   bounded UI error path and the manual host run rather than a headless session
   fixture.
 - Manual acceptance owns the real Windows GUI checks: Yazi navigation,
-  Japanese/Unicode, resize, IME, focus, clipboard, and child-process cleanup.
+  Japanese/Unicode, resize, IME candidate placement, focus, clipboard,
+  mouse reporting, native HWND overlays, and child-process cleanup.
 
 ## Security and compatibility
 

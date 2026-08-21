@@ -2,14 +2,17 @@
 
 ## Decision status
 
-`VirtualTerminal.WPF` / `VirtualTerminal.CommandLine` 1.8.1 is the first
-implementation candidate. It is not adopted as the production terminal
-backend yet. The package is behind the WPF/session boundary so a failed
-compatibility gate can be replaced without introducing screen parsing.
+`EasyWindowsTerminalControl` 1.0.38 is now the first implementation candidate
+for the next compatibility run. It is not adopted as the production terminal
+backend yet. The package wraps the Microsoft Windows Terminal WPF control and
+ConPTY, while keeping the terminal boundary replaceable without introducing
+screen parsing. The earlier `VirtualTerminal.WPF` /
+`VirtualTerminal.CommandLine` 1.8.1 run remains the baseline comparison.
 
-The comparison candidate is a WPF Terminal Control derived from the Microsoft
-Windows Terminal implementation. It is not implemented in this slice because
-the first candidate has not yet produced a complete compatibility result.
+The Easy candidate is intentionally provisional. Its published package still
+depends on beta/low-level Windows Terminal components, and the native terminal
+HWND introduces WPF airspace constraints. See the [NuGet package page](https://www.nuget.org/packages/easywindowsterminalcontrol/)
+and the [upstream project](https://github.com/mitchcapper/EasyWindowsTerminalControl).
 
 ## Alternative comparison
 
@@ -22,45 +25,46 @@ it would require a source-build or packaging strategy in this .NET 10 host.
 See the [official WPF control source](https://github.com/microsoft/terminal/blob/main/src/cascadia/WpfTerminalControl/TerminalControl.xaml.cs)
 and [project file](https://github.com/microsoft/terminal/blob/main/src/cascadia/WpfTerminalControl/WpfTerminalControl.csproj).
 
-| Concern | VirtualTerminal 1.8.1 | Microsoft Windows Terminal WPF control |
+| Concern | EasyWindowsTerminalControl 1.0.38 | Microsoft Windows Terminal WPF control |
 | --- | --- | --- |
-| Initial integration | Low: NuGet WPF control plus ConPTY session | High: source/native build and packaging boundary |
-| Current target fit | Directly documented for this .NET 10 project | Upstream project currently targets .NET Framework 4.7.2 and .NET 8 WPF |
-| Renderer/input maturity | Must be proven against Yazi in this host | Reuses Windows Terminal's renderer/input stack, but still needs Yazi-specific proof |
-| Resize surface | Session/control resize API is available | Control exposes rows/columns and a connection abstraction |
-| Child exit ownership | Public session API did not expose a reliable child-exit event in the probe | Connection implementation can be owned by this host, but the required ConPTY/process wrapper still must be designed |
-| Distribution risk | Package restore and local build currently work | Native architecture-specific artifacts and upstream source cadence must be controlled |
+| Initial integration | Low: NuGet control, official Windows Terminal backend, and ConPTY wrapper | High: source/native build and packaging boundary |
+| Current target fit | Package restores and builds in this .NET 10 WPF host | Upstream project currently targets .NET Framework 4.7.2 and .NET 8 WPF |
+| Renderer/input maturity | Native Windows Terminal renderer/input path; Yazi-specific matrix is partly passed | Same renderer/input stack, but the required ConPTY/process wrapper still must be designed |
+| Resize surface | Real Yazi resize passed manually; `EasyTerminalControl` owns the terminal surface | Control exposes rows/columns and a connection abstraction |
+| Child exit ownership | `TermPTY` exposes process/start/stop APIs but no public child-exit event was found | Connection implementation can be owned by this host, but the required process wrapper still must be designed |
+| Distribution risk | Package includes native terminal/ConPTY assets; beta dependency and architecture review remain | Native architecture-specific artifacts and upstream source cadence must be controlled |
 
-This comparison does not select the Microsoft control automatically. The
-current recommendation is to keep `VirtualTerminal` as the provisional
-implementation candidate while running the same manual Yazi matrix against
-both controls if any VT, input, or lifecycle gate fails. Microsoft's own sample
-documentation describes the WPF console sample as a skeleton and the MiniTerm
-sample as experimental, so a production choice still needs an owned connection
-and cleanup design; see the [Microsoft Terminal samples](https://learn.microsoft.com/en-us/windows/terminal/samples).
+This comparison does not select the Easy candidate automatically. The current
+recommendation is to continue with Easy as the leading candidate while the
+child-exit observation, packaging, and later GUI-overlay constraints are
+resolved. If a gate fails, compare it with the source-derived
+Microsoft control; Microsoft's own sample documentation describes the WPF
+console sample as a skeleton and the MiniTerm sample as experimental, so a
+production choice still needs an owned connection and cleanup design. See the
+[Microsoft Terminal samples](https://learn.microsoft.com/en-us/windows/terminal/samples).
 
 ## Evidence collected
 
 | Capability | Result | Evidence or remaining action |
 | --- | --- | --- |
-| Package restore | PASS | `VirtualTerminal.WPF` and `VirtualTerminal.CommandLine` 1.8.1 restored with the .NET 10 SDK. |
+| Package restore | PASS | `EasyWindowsTerminalControl` 1.0.38 and its Windows Terminal/ConPTY dependencies restored with the .NET 10 SDK. |
 | WPF build | PASS | `dotnet build YaziDesktopHost.slnx --no-restore`, 0 warnings and 0 errors. |
-| Real Yazi launch | PASS | The host launched the installed `yazi.exe` 26.5.6 through the embedded control; no separate terminal window was opened. |
-| Keyboard delivery | PARTIAL | A keyboard action was delivered to the host window without an automation error. Semantic navigation movement still needs a human-observable acceptance check. |
-| VT rendering / 24-bit color | NOT VERIFIED | Requires visual/manual inspection of a deterministic VT fixture inside the running host. |
-| Alternate screen | NOT VERIFIED | Requires confirming Yazi's full-screen surface and restoration after exit. |
-| Unicode/CJK/wide characters | NOT VERIFIED | Requires a visible Japanese and wide-character fixture in the running host. |
-| IME composition | FAIL | Japanese input and commit work, but the candidate window opens near the desktop's upper-left corner. A diagnostic run produced no `WM_IME_*` messages while the input was handled, so the active WPF/TSF route is outside the host's IMM32 hook. The candidate cannot be accepted until the control exposes a TSF microfocus/caret surface or is replaced by a native terminal HWND backend. |
-| xterm mouse reporting | NOT VERIFIED | Requires interactive mouse actions in Yazi and confirmation that reporting is preserved. |
-| Resize and reflow | NOT VERIFIED | Requires interactive resize while Yazi is running and visual reflow confirmation. |
-| Close cleanup | PASS | The host process and its `yazi` child were absent after the evaluation process was closed. |
-| Unexpected child exit | PARTIAL | The host handles the session's public `Disconnected` notification, but an immediate child exit using `where.exe` did not raise that event. The candidate does not expose a public child-exit event, so direct exit observation remains unresolved. |
+| Real Yazi launch | PASS | The host launched the installed `yazi.exe` 26.5.6 through the embedded native terminal; no separate terminal window was opened. |
+| Renderer / alternate screen | PASS | Yazi's full-screen surface rendered naturally in the manual run; the user reported less redraw stress than VirtualTerminal. A deterministic 24-bit color fixture remains pending. |
+| Keyboard delivery | PASS | The user confirmed normal key operation. |
+| Unicode/CJK/wide characters | PASS | The user confirmed CJK display. |
+| IME composition | PASS | The user confirmed Japanese input, conversion, and commit with the Easy control; the candidate window appeared at the input position. |
+| xterm mouse reporting | PASS | The user confirmed mouse operation in Yazi. Explorer-style Drag & Drop is not implemented and is a separate GUI/OLE requirement. |
+| Resize and reflow | PASS | The user confirmed interactive resize. |
+| Close cleanup | PASS | After the run, no Easy host or `yazi` process remained. |
+| Unexpected child exit | PARTIAL | `TermPTY` exposes process/start/stop APIs but no public child-exit event was found. Close cleanup is implemented, but unexpected-exit observation remains unresolved. |
 
 ## Acceptance boundary
 
 The automated run proves package integration, compilation, executable
-resolution, host launch, and process cleanup. It does not prove the visual or
-interactive terminal behaviors listed as `NOT VERIFIED`. Those remain manual
+resolution, host launch, bridge-environment scoping, and process cleanup. The
+manual run proves the listed CJK, keyboard, mouse, resize, and IME behaviors.
+Deterministic 24-bit color and unexpected child-exit observation remain
 acceptance gates before selecting the candidate for production.
 
 The unexpected-child-exit result is a separate lifecycle limitation. It must
@@ -83,10 +87,12 @@ exclusion rectangle. `VirtualTerminal.WPF` exposes a custom drawing control
 and `PreviewTextInput`, but no public text-store or microfocus API. Therefore,
 further coordinate-only changes in `MainWindow` are not a reliable fix.
 
-The next comparison must use a backend with native IME ownership. Microsoft's
-WPF terminal control hosts a native terminal HWND through `HwndHost`; it is a
-more credible candidate for IME/TSF behavior, but requires a native build and
-architecture-specific packaging review before adoption.
+The earlier VirtualTerminal run showed a candidate window at the desktop's
+upper-left corner despite successful Japanese commit. Easy hosts the official
+Windows Terminal control in a native terminal HWND, and the manual run
+confirmed that Japanese conversion candidates are positioned correctly. The
+native HWND also means WPF overlay and airspace behavior needs a later GUI
+integration test.
 
 If any gate fails, compare the candidate against a WPF control derived from
 Microsoft Windows Terminal, recording the same capability-by-capability
