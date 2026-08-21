@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/YaziDesktopHost/YaziDesktopHost.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/YaziDesktopHost.Tests/YaziDesktopHost.Tests.csproj" />
+  </Folder>
+</Solution>

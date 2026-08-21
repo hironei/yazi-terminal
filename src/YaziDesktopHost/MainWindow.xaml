@@ -1,0 +1,24 @@
+<Window x:Class="YaziDesktopHost.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vt="clr-namespace:VirtualTerminal;assembly=VirtualTerminal.WPF"
+        Title="Yazi Desktop Host"
+        Background="Black"
+        MinWidth="640"
+        MinHeight="360"
+        Width="1280"
+        Height="800"
+        Loaded="Window_Loaded"
+        Closing="Window_Closing">
+    <Grid Background="Black">
+        <vt:TerminalControl x:Name="Terminal"
+                            AllowDirectInput="True"
+                            CursorBlinking="True"
+                            CursorVisible="True"
+                            ScrollDownVisible="True"
+                            ScreenBackground="Black"
+                            ScreenForeground="White"
+                            FontFamily="Cascadia Mono"
+                            FontSize="14" />
+    </Grid>
+</Window>

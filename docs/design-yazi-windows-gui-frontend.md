@@ -85,8 +85,10 @@ The host will never inspect the terminal screen buffer for these values.
 
 - Executable resolution is a pure service with injected environment/PATH
   lookup, so missing/invalid/valid paths are unit-testable.
-- Session construction is behind a small factory so tests can verify startup
-  error classification without opening a WPF window.
+- Session construction and ConPTY creation remain in the WPF composition root
+  for this first slice; startup/session failures are therefore covered by the
+  bounded UI error path and the manual host run rather than a headless session
+  fixture.
 - Manual acceptance owns the real Windows GUI checks: Yazi navigation,
   Japanese/Unicode, resize, IME, focus, clipboard, and child-process cleanup.
 
