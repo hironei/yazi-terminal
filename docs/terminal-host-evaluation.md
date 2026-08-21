@@ -50,7 +50,7 @@ and cleanup design; see the [Microsoft Terminal samples](https://learn.microsoft
 | VT rendering / 24-bit color | NOT VERIFIED | Requires visual/manual inspection of a deterministic VT fixture inside the running host. |
 | Alternate screen | NOT VERIFIED | Requires confirming Yazi's full-screen surface and restoration after exit. |
 | Unicode/CJK/wide characters | NOT VERIFIED | Requires a visible Japanese and wide-character fixture in the running host. |
-| IME composition | NOT VERIFIED | Requires interactive Windows IME composition and committed text. |
+| IME composition | FAIL | Japanese input and commit work, but the candidate window opens near the desktop's upper-left corner. A diagnostic run produced no `WM_IME_*` messages while the input was handled, so the active WPF/TSF route is outside the host's IMM32 hook. The candidate cannot be accepted until the control exposes a TSF microfocus/caret surface or is replaced by a native terminal HWND backend. |
 | xterm mouse reporting | NOT VERIFIED | Requires interactive mouse actions in Yazi and confirmation that reporting is preserved. |
 | Resize and reflow | NOT VERIFIED | Requires interactive resize while Yazi is running and visual reflow confirmation. |
 | Close cleanup | PASS | The host process and its `yazi` child were absent after the evaluation process was closed. |
@@ -66,6 +66,27 @@ acceptance gates before selecting the candidate for production.
 The unexpected-child-exit result is a separate lifecycle limitation. It must
 be resolved by a documented session API guarantee or by replacing the
 candidate with a backend that exposes reliable child-process observation.
+
+## IME root-cause finding
+
+The host-level IMM32 workaround was intentionally removed after a diagnostic
+run. The host received no `WM_IME_STARTCOMPOSITION`, `WM_IME_COMPOSITION`, or
+`WM_IME_NOTIFY` messages during Japanese conversion, even though committed
+Japanese text was delivered. This indicates that the active input path is
+WPF/TSF text composition rather than the IMM32 message path that
+`ImmSetCandidateWindow` can control.
+
+This matches the architectural difference from standard WPF text controls:
+WPF's internal `ImmComposition` obtains a `TextEditor`/`ITextView` caret
+rectangle, transforms it to device coordinates, and supplies a candidate
+exclusion rectangle. `VirtualTerminal.WPF` exposes a custom drawing control
+and `PreviewTextInput`, but no public text-store or microfocus API. Therefore,
+further coordinate-only changes in `MainWindow` are not a reliable fix.
+
+The next comparison must use a backend with native IME ownership. Microsoft's
+WPF terminal control hosts a native terminal HWND through `HwndHost`; it is a
+more credible candidate for IME/TSF behavior, but requires a native build and
+architecture-specific packaging review before adoption.
 
 If any gate fails, compare the candidate against a WPF control derived from
 Microsoft Windows Terminal, recording the same capability-by-capability

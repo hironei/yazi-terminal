@@ -18,7 +18,7 @@
                             ScrollDownVisible="True"
                             ScreenBackground="Black"
                             ScreenForeground="White"
-                            FontFamily="Cascadia Mono"
+                            FontFamily="MS Gothic"
                             FontSize="14" />
     </Grid>
 </Window>
