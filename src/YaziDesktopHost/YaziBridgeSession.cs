@@ -102,6 +102,10 @@ public sealed class YaziBridgeSession : IAsyncDisposable
                 {
                     break;
                 }
+                catch (ObjectDisposedException)
+                {
+                    reason = "disconnect";
+                }
                 catch (YaziBridgeProtocolException)
                 {
                     reason = "protocol-error";

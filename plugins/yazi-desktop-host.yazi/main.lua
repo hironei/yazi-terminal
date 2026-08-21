@@ -97,7 +97,11 @@ local function setup(state, opts)
 				ya.err("yazi-desktop-host bridge write failed", write_err)
 				return false
 			end
-			fd:flush()
+			local flushed, flush_err = fd:flush()
+			if not flushed then
+				ya.err("yazi-desktop-host bridge flush failed", flush_err)
+				return false
+			end
 			return true
 		end
 

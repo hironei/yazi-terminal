@@ -85,9 +85,23 @@ YAZI_CONFIG_HOME. The plugin was enabled only in that temporary init.lua.
 This proves the pinned plugin/pipe path for the snapshot, hover, selection,
 UTF-8, and disconnect gates. The host session and probe now implement
 reconnection with a fresh hello/snapshot, and the host-side reconnect test
-passes. A full real-Yazi reconnect run remains open before production Shell
-integration; the selected terminal backend's child-exit notification and
-process cleanup were verified separately.
+passes. A Windows WPF/Easy host fixture then started the real Yazi process
+through ConPTY with only a temporary `YAZI_CONFIG_HOME`, interrupted the
+active pipe after the first snapshot, and observed
+`available -> unavailable -> available`. The Yazi plugin reported a write
+failure, reopened the pipe, and the host accepted a fresh hello/snapshot.
+The reconnect fixture used deterministic per-poll publication so that the
+post-interruption write is not dependent on a user key event; the normal
+change-driven publication path remains separately compatibility-sensitive.
+The selected terminal backend's child-exit notification and process cleanup
+were verified separately.
+
+The fixture also exposed two lifecycle details now covered by the
+implementation: `fd:flush()` failures must be treated as write failures in
+the Lua plugin, and a server-side pipe close can surface as
+`ObjectDisposedException` in the host receive loop and must be classified as
+a normal disconnect so that the listener continues accepting a replacement
+connection. No user Yazi configuration was changed.
 
 ## References
 

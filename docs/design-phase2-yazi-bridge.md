@@ -72,9 +72,12 @@ the user's Yazi configuration.
 `YaziBridgeSession` owns one active transport connection at a time, feeds
 frames through the protocol parser and reducer, publishes available
 snapshots/updates, and emits an unavailable notification on goodbye, protocol
-failure, or disconnect before accepting a replacement connection. It is
-currently started by `MainWindow`, but its state is not consumed by Shell
-features until the Yazi plugin/configuration contract is approved.
+failure, or disconnect before accepting a replacement connection. A real
+Yazi/ConPTY fixture now confirms replacement acceptance after a pipe
+interruption; the fixture uses temporary configuration and deterministic
+post-interruption publication. It is currently started by `MainWindow`, but
+its state is not consumed by Shell features until the Yazi plugin/configuration
+contract is approved.
 
 ## DTOs and reducer
 

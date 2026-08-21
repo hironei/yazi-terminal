@@ -164,9 +164,11 @@ empty selection or cleared hover is distinguishable from an omitted field.
   existing Yazi configuration; the temporary fixture proves this for an
   opt-in `init.lua` setup and does not overwrite user configuration.
 - Confirm reconnect behavior with a real Yazi instance after the pipe is
-  interrupted. The host session and plugin probe now retry with hello sequence
-  0 and require a fresh snapshot, but the full real-Yazi reconnect gate remains
-  unvalidated.
+  interrupted. A Windows WPF/ConPTY fixture using Yazi 26.5.6 and a temporary
+  config observed unavailable state followed by a fresh hello/snapshot and
+  available state. The fixture forces a post-interruption poll write so the
+  gate is deterministic; natural user-driven state changes remain a separate
+  compatibility check.
 - Retain the selected backend's `WaitForExit`/session-terminated marker as the
   lifecycle signal. A real-process probe now confirms host-owned Yazi exit,
   user-facing notification, acknowledgement, and asynchronous bridge cleanup.
