@@ -85,8 +85,9 @@ YAZI_CONFIG_HOME. The plugin was enabled only in that temporary init.lua.
 This proves the pinned plugin/pipe path for the snapshot, hover, selection,
 UTF-8, and disconnect gates. The host session and probe now implement
 reconnection with a fresh hello/snapshot, and the host-side reconnect test
-passes. A full real-Yazi reconnect run and a clean Yazi child-exit notification
-remain open before production Shell integration.
+passes. A full real-Yazi reconnect run remains open before production Shell
+integration; the selected terminal backend's child-exit notification and
+process cleanup were verified separately.
 
 ## References
 

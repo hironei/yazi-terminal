@@ -39,9 +39,9 @@ The current candidate for evaluation is `EasyWindowsTerminalControl` 1.0.38:
   airspace behavior remain compatibility risks.
 
 This is not an adoption decision. The Easy run passed Yazi CJK display,
-keyboard, mouse, resize, IME candidate position, and normal full-screen
-rendering. Deterministic 24-bit color and unexpected child-exit observation
-remain open. If a required behavior is insufficient, compare a source-derived
+keyboard, mouse, resize, IME candidate position, normal full-screen rendering,
+deterministic 24-bit color, and unexpected child-exit handling. Packaging and
+native HWND overlay behavior remain open. If a required behavior is insufficient, compare a source-derived
 Microsoft WPF Terminal Control before choosing the production backend. Until
 that gate passes, the backend remains replaceable behind the session/control
 boundary.
@@ -70,11 +70,14 @@ WPF `TextBox` or parsing screen text.
 - Easy starts its child from the terminal control's loaded path. The bridge
   environment scope must therefore remain active until that asynchronous
   startup path has created the child; it is restored during window shutdown.
-- The public `TermPTY` API does not expose a child-process exit event. Window
-  close calls `DisconnectConPTYTerm`, closes PTY stdin, and stops the external
-  terminal process; unexpected-exit observation remains an explicit gate.
+- The public `TermPTY` API does not expose a child-process exit event. The host
+  waits on its public process handle and consumes the package's
+  `Session Terminated` terminal-output lifecycle marker as a second signal.
+  Window close calls `DisconnectConPTYTerm`, closes PTY stdin, and stops the
+  external terminal process.
 - Window close is idempotent: stop accepting new input, close the bridge,
-  disconnect the control, stop the PTY child, then allow WPF shutdown.
+  disconnect the control, stop the PTY child, and finish bridge disposal
+  asynchronously so WPF shutdown is not blocked by the receive loop.
 - Startup failures are classified as executable resolution, ConPTY/session
   creation, or child-start failure. The UI reports a short message; diagnostic
   logs do not include terminal contents.
@@ -98,7 +101,8 @@ The host will never inspect the terminal screen buffer for these values.
   fixture.
 - Manual acceptance owns the real Windows GUI checks: Yazi navigation,
   Japanese/Unicode, resize, IME candidate placement, focus, clipboard,
-  mouse reporting, native HWND overlays, and child-process cleanup.
+  mouse reporting, native HWND overlays, child-process cleanup, and the
+  unexpected-exit notification.
 
 ## Security and compatibility
 

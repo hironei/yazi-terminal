@@ -31,13 +31,13 @@ and [project file](https://github.com/microsoft/terminal/blob/main/src/cascadia/
 | Current target fit | Package restores and builds in this .NET 10 WPF host | Upstream project currently targets .NET Framework 4.7.2 and .NET 8 WPF |
 | Renderer/input maturity | Native Windows Terminal renderer/input path; Yazi-specific matrix is partly passed | Same renderer/input stack, but the required ConPTY/process wrapper still must be designed |
 | Resize surface | Real Yazi resize passed manually; `EasyTerminalControl` owns the terminal surface | Control exposes rows/columns and a connection abstraction |
-| Child exit ownership | `TermPTY` exposes process/start/stop APIs but no public child-exit event was found | Connection implementation can be owned by this host, but the required process wrapper still must be designed |
+| Child exit ownership | `TermPTY` exposes `WaitForExit`; the host also consumes its `TerminalOutput` session-terminated marker and performs asynchronous bridge cleanup | Connection implementation can be owned by this host, but the required process wrapper still must be designed |
 | Distribution risk | Package includes native terminal/ConPTY assets; beta dependency and architecture review remain | Native architecture-specific artifacts and upstream source cadence must be controlled |
 
 This comparison does not select the Easy candidate automatically. The current
 recommendation is to continue with Easy as the leading candidate while the
-child-exit observation, packaging, and later GUI-overlay constraints are
-resolved. If a gate fails, compare it with the source-derived
+packaging and later GUI-overlay constraints are resolved. If a gate fails,
+compare it with the source-derived
 Microsoft control; Microsoft's own sample documentation describes the WPF
 console sample as a skeleton and the MiniTerm sample as experimental, so a
 production choice still needs an owned connection and cleanup design. See the
@@ -50,26 +50,31 @@ production choice still needs an owned connection and cleanup design. See the
 | Package restore | PASS | `EasyWindowsTerminalControl` 1.0.38 and its Windows Terminal/ConPTY dependencies restored with the .NET 10 SDK. |
 | WPF build | PASS | `dotnet build YaziDesktopHost.slnx --no-restore`, 0 warnings and 0 errors. |
 | Real Yazi launch | PASS | The host launched the installed `yazi.exe` 26.5.6 through the embedded native terminal; no separate terminal window was opened. |
-| Renderer / alternate screen | PASS | Yazi's full-screen surface rendered naturally in the manual run; the user reported less redraw stress than VirtualTerminal. A deterministic 24-bit color fixture remains pending. |
+| Renderer / alternate screen | PASS | Yazi's full-screen surface rendered naturally in the manual run; the user reported less redraw stress than VirtualTerminal. The opt-in deterministic 24-bit fixture displayed distinct red, green, and blue backgrounds. |
 | Keyboard delivery | PASS | The user confirmed normal key operation. |
 | Unicode/CJK/wide characters | PASS | The user confirmed CJK display. |
 | IME composition | PASS | The user confirmed Japanese input, conversion, and commit with the Easy control; the candidate window appeared at the input position. |
 | xterm mouse reporting | PASS | The user confirmed mouse operation in Yazi. Explorer-style Drag & Drop is not implemented and is a separate GUI/OLE requirement. |
 | Resize and reflow | PASS | The user confirmed interactive resize. |
 | Close cleanup | PASS | After the run, no Easy host or `yazi` process remained. |
-| Unexpected child exit | PARTIAL | `TermPTY` exposes process/start/stop APIs but no public child-exit event was found. Close cleanup is implemented, but unexpected-exit observation remains unresolved. |
+| Unexpected child exit | PASS | A real test killed only the host-owned Yazi process tree; the host displayed the unexpected-exit dialog, and after acknowledgement both host/Yazi processes exited. |
 
 ## Acceptance boundary
 
 The automated run proves package integration, compilation, executable
 resolution, host launch, bridge-environment scoping, and process cleanup. The
 manual run proves the listed CJK, keyboard, mouse, resize, and IME behaviors.
-Deterministic 24-bit color and unexpected child-exit observation remain
-acceptance gates before selecting the candidate for production.
+The real-process run also verified the user-facing unexpected-exit notification
+and post-acknowledgement cleanup.
 
-The unexpected-child-exit result is a separate lifecycle limitation. It must
-be resolved by a documented session API guarantee or by replacing the
-candidate with a backend that exposes reliable child-process observation.
+The host now observes Easy's public `WaitForExit`/`TerminalOutput` lifecycle
+signals and performs bridge cleanup asynchronously so an exit cannot block the
+WPF dispatcher. The package does not expose a dedicated child-exit event, so
+the marker and wait-based observation remain coupled to the Easy API surface.
+
+For a deterministic color check, set `YAZI_DESKTOP_HOST_VT_FIXTURE=1` before
+starting the host. The diagnostic strip is opt-in and is not rendered during
+normal launches.
 
 ## IME root-cause finding
 

@@ -24,3 +24,6 @@ dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
 
 Set `YAZI_PATH` when `yazi.exe` is not available through `PATH`. Later Shell
 integration phases must not be implemented by parsing terminal screen text.
+
+For an opt-in terminal color diagnostic, set `YAZI_DESKTOP_HOST_VT_FIXTURE=1`
+before launching. The fixture is intended for manual validation only.

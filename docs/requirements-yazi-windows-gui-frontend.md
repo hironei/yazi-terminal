@@ -74,9 +74,9 @@ which combines a Windows Terminal WPF control with ConPTY. This dependency
 change was explicitly requested for the current pipeline run.
 
 `EasyWindowsTerminalControl` is an evaluation target, not an adoption decision.
-The real Yazi run passed CJK, IME, keyboard input, mouse reporting, resize, and
-normal full-screen rendering. Deterministic 24-bit color and unexpected child
-exit observation remain open gates. If any required behavior is insufficient,
+The real Yazi run passed CJK, IME, keyboard input, mouse reporting, resize,
+normal full-screen rendering, deterministic 24-bit color, and unexpected child
+exit handling. Packaging and native HWND overlay behavior remain open gates. If any required behavior is insufficient,
 compare a WPF Terminal Control derived from the Microsoft Windows Terminal
 implementation before selecting the production backend.
 

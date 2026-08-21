@@ -167,5 +167,6 @@ empty selection or cleared hover is distinguishable from an omitted field.
   interrupted. The host session and plugin probe now retry with hello sequence
   0 and require a fresh snapshot, but the full real-Yazi reconnect gate remains
   unvalidated.
-- Confirm the real child-exit signal and shutdown ordering of the selected
-  terminal backend before claiming the lifecycle gate complete.
+- Retain the selected backend's `WaitForExit`/session-terminated marker as the
+  lifecycle signal. A real-process probe now confirms host-owned Yazi exit,
+  user-facing notification, acknowledgement, and asynchronous bridge cleanup.

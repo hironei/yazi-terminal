@@ -13,6 +13,8 @@ public partial class MainWindow : Window
     private YaziBridgePipeServer? _bridgeServer;
     private YaziBridgeSession? _bridgeSession;
     private IDisposable? _bridgeEnvironment;
+    private CancellationTokenSource? _processMonitorCancellation;
+    private Task? _processMonitorTask;
     private bool _isClosing;
 
     public MainWindow()
@@ -50,6 +52,8 @@ public partial class MainWindow : Window
                 FontSizeWhenSettingTheme = 14,
                 Win32InputMode = true,
             };
+            _term.TermReady += Term_TermReady;
+            _term.TerminalOutput += Term_TerminalOutput;
             TerminalHost.Children.Add(_terminal);
             _terminal.Focus();
         }
@@ -77,6 +81,16 @@ public partial class MainWindow : Window
 
     private void DisposeSession()
     {
+        if (_term is not null)
+        {
+            _term.TermReady -= Term_TermReady;
+            _term.TerminalOutput -= Term_TerminalOutput;
+        }
+
+        _processMonitorCancellation?.Cancel();
+        _processMonitorCancellation?.Dispose();
+        _processMonitorCancellation = null;
+        _processMonitorTask = null;
         _terminal?.DisconnectConPTYTerm();
         _term?.CloseStdinToApp();
         _term?.StopExternalTermOnly();
@@ -88,19 +102,125 @@ public partial class MainWindow : Window
         DisposeBridge();
     }
 
-    private void DisposeBridge()
+    private void Term_TerminalOutput(object? sender, TerminalOutputEventArgs e)
     {
-        if (_bridgeSession is null)
+        if (sender is TermPTY term
+            && string.Equals(e.Data, "Session Terminated", StringComparison.Ordinal))
         {
-            _bridgeServer?.Dispose();
-            _bridgeServer = null;
+            Dispatcher.BeginInvoke(() => HandleUnexpectedExit(term));
+        }
+    }
+
+    private void Term_TermReady(object? sender, EventArgs e)
+    {
+        if (_processMonitorTask is not null || sender is not TermPTY term)
+        {
             return;
         }
 
-        _bridgeSession.Disconnected -= Bridge_Disconnected;
-        _bridgeSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        AppLogger.Log("yazi_process_monitor_starting");
+        _processMonitorCancellation = new CancellationTokenSource();
+        _processMonitorTask = MonitorProcessExitAsync(term, _processMonitorCancellation.Token);
+
+        if (TerminalColorFixture.IsEnabled)
+        {
+            _ = ShowTerminalColorFixtureAsync(term, _processMonitorCancellation.Token);
+        }
+    }
+
+    private static async Task ShowTerminalColorFixtureAsync(TermPTY term, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1.5), cancellationToken);
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                term.WriteToUITerminal(TerminalColorFixture.Sequence);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Normal window shutdown.
+        }
+    }
+
+    private Task MonitorProcessExitAsync(TermPTY term, CancellationToken cancellationToken)
+    {
+        var process = term.Process;
+        if (process is null)
+        {
+            AppLogger.Log("yazi_exit_observation_unavailable");
+            return Task.CompletedTask;
+        }
+
+        return Task.Run(() =>
+        {
+            try
+            {
+                process.WaitForExit();
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    AppLogger.Log("yazi_process_exit_detected");
+                    Dispatcher.Invoke(() => HandleUnexpectedExit(term));
+                }
+            }
+            catch (Exception exception)
+            {
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    AppLogger.Log("yazi_exit_observation_failed", exception);
+                    Dispatcher.Invoke(() => HandleUnexpectedExit(term));
+                }
+            }
+        });
+    }
+
+    private void HandleUnexpectedExit(TermPTY term)
+    {
+        if (_isClosing || !ReferenceEquals(_term, term))
+        {
+            return;
+        }
+
+        _isClosing = true;
+        AppLogger.Log("yazi_unexpected_exit");
+        MessageBox.Show(
+            this,
+            "Yazi stopped unexpectedly. See the application log for details.",
+            "Yazi Desktop Host",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
+        DisposeSession();
+        Close();
+    }
+
+    private void DisposeBridge()
+    {
+        var session = _bridgeSession;
+        var server = _bridgeServer;
         _bridgeSession = null;
         _bridgeServer = null;
+
+        if (session is null)
+        {
+            server?.Dispose();
+            return;
+        }
+
+        session.Disconnected -= Bridge_Disconnected;
+        _ = DisposeBridgeAsync(session);
+    }
+
+    private static async Task DisposeBridgeAsync(YaziBridgeSession session)
+    {
+        try
+        {
+            await session.DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            AppLogger.Log("yazi_bridge_dispose_failed", exception);
+        }
     }
 
     private void Bridge_Disconnected(string reason)
