@@ -9,6 +9,8 @@ The reviewed scope and known blockers are documented in:
 - [Phase 1 requirements](docs/requirements-yazi-windows-gui-frontend.md)
 - [Phase 1 design](docs/design-yazi-windows-gui-frontend.md)
 - [Terminal host candidate evaluation](docs/terminal-host-evaluation.md)
+- [Phase 2 bridge requirements](docs/requirements-phase2-yazi-bridge.md)
+- [Phase 2 bridge design](docs/design-phase2-yazi-bridge.md)
 
 Run the host with the .NET 10 SDK from the repository root:
 
