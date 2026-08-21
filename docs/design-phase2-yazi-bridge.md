@@ -2,10 +2,11 @@
 
 ## Design status
 
-This is a design-level Phase 2 contract. It does not add the bridge, a Yazi
-plugin, a named-pipe implementation, or Shell integration. Implementation
-starts only after the open decisions in the Phase 2 requirements are resolved
-against a pinned Yazi/`ya` fixture.
+This is a design-level Phase 2 contract. The repository may implement and test
+the pure message parser and state reducer described below, but it does not yet
+add the bridge transport, a Yazi plugin, a named-pipe implementation, or Shell
+integration. Those runtime pieces start only after the open decisions in the
+Phase 2 requirements are resolved against a pinned Yazi/`ya` fixture.
 
 ## Boundary
 
