@@ -83,6 +83,7 @@ local function setup(state, opts)
 	local instance_id = opts.instance_id or os.getenv("YAZI_DESKTOP_HOST_INSTANCE_ID")
 	local path_kind = opts.path_kind or "filesystem"
 	local interval = opts.interval or 0.1
+	local retry_interval = opts.retry_interval or 1
 	if not pipe or not instance_id then
 		ya.err("yazi-desktop-host requires YAZI_DESKTOP_HOST_PIPE and YAZI_DESKTOP_HOST_INSTANCE_ID")
 		return
@@ -90,15 +91,7 @@ local function setup(state, opts)
 
 	state.started = true
 	ya.async(function()
-		local fd, err = fs.access():write(true):open(Url(pipe))
-		if not fd then
-			ya.err("yazi-desktop-host could not open the bridge pipe", err)
-			return
-		end
-
-		local sequence = 0
-		local last_snapshot
-		local function send(kind, payload)
+		local function send(fd, sequence, kind, payload)
 			local ok, write_err = fd:write_all(json_envelope(instance_id, sequence, kind, payload) .. "\n")
 			if not ok then
 				ya.err("yazi-desktop-host bridge write failed", write_err)
@@ -108,26 +101,38 @@ local function setup(state, opts)
 			return true
 		end
 
-		sequence = 0
-		if not send("hello", "{\"capabilities\":[\"snapshot\",\"state\"]}") then
-			return
-		end
-
 		while true do
-			local snapshot = get_state()
-			local encoded_snapshot = json_snapshot(path_kind, snapshot)
-			if encoded_snapshot ~= last_snapshot then
-				sequence = sequence + 1
-				local kind = last_snapshot and "state" or "snapshot"
-				local payload = kind == "snapshot"
-					and encoded_snapshot
-					or json_state_update(path_kind, snapshot)
-				if not send(kind, payload) then
-					return
+			local fd, err = fs.access():write(true):open(Url(pipe))
+			if not fd then
+				ya.err("yazi-desktop-host could not open the bridge pipe", err)
+				ya.sleep(retry_interval)
+			else
+				local sequence = 0
+				local last_snapshot
+				local connected = send(fd, sequence, "hello", "{\"capabilities\":[\"snapshot\",\"state\"]}")
+				if connected then
+					while true do
+						local snapshot = get_state()
+						local encoded_snapshot = json_snapshot(path_kind, snapshot)
+						if encoded_snapshot ~= last_snapshot then
+							sequence = sequence + 1
+							local kind = last_snapshot and "state" or "snapshot"
+							local payload = kind == "snapshot"
+								and encoded_snapshot
+								or json_state_update(path_kind, snapshot)
+							if not send(fd, sequence, kind, payload) then
+								connected = false
+								break
+							end
+							last_snapshot = encoded_snapshot
+						end
+						ya.sleep(interval)
+					end
 				end
-				last_snapshot = encoded_snapshot
+				if not connected then
+					ya.sleep(retry_interval)
+				end
 			end
-			ya.sleep(interval)
 		end
 	end)
 end

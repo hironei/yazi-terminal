@@ -14,7 +14,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge reducer invalidates a sequence gap", BridgeReducerInvalidatesSequenceGap),
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
-    ("bridge session publishes state and disconnect", BridgeSessionPublishesStateAndDisconnect),
+    ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("Yazi process info uses bridge identity", YaziProcessInfoUsesBridgeIdentity),
 };
 
@@ -194,15 +194,27 @@ static void BridgePipeRoundTripsFrame()
     Assert(clientReadTask.GetAwaiter().GetResult() == Encoding.UTF8.GetString(frame));
 }
 
-static void BridgeSessionPublishesStateAndDisconnect()
+static void BridgeSessionReconnectsAfterDisconnect()
 {
     var instanceId = Guid.NewGuid();
     using var server = new YaziBridgePipeServer(instanceId);
     var session = new YaziBridgeSession(instanceId, server);
     var states = new List<YaziBridgeState?>();
-    var disconnectReason = string.Empty;
-    session.StateChanged += states.Add;
-    session.Disconnected += reason => disconnectReason = reason;
+    var disconnectReasons = new List<string>();
+    session.StateChanged += state =>
+    {
+        lock (states)
+        {
+            states.Add(state);
+        }
+    };
+    session.Disconnected += reason =>
+    {
+        lock (disconnectReasons)
+        {
+            disconnectReasons.Add(reason);
+        }
+    };
     var runTask = session.RunAsync();
 
     using (var client = new NamedPipeClientStream(
@@ -216,13 +228,44 @@ static void BridgeSessionPublishesStateAndDisconnect()
         SendFrame(client, SnapshotFrame(instanceId, 1));
     }
 
-    runTask.GetAwaiter().GetResult();
-    session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    WaitUntil(() =>
+    {
+        lock (states)
+        {
+            return states.Any(state => state is null);
+        }
+    });
 
-    Assert(states.Count >= 2);
-    Assert(states[0] is not null && states[0]!.Sequence == 1);
-    Assert(states[^1] is null);
-    Assert(disconnectReason == "disconnect");
+    using (var client = new NamedPipeClientStream(
+        ".",
+        server.PipeName,
+        PipeDirection.InOut,
+        PipeOptions.Asynchronous))
+    {
+        client.Connect(5000);
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 1));
+    }
+
+    session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    runTask.GetAwaiter().GetResult();
+
+    YaziBridgeState?[] observedStates;
+    lock (states)
+    {
+        observedStates = states.ToArray();
+    }
+
+    string[] observedReasons;
+    lock (disconnectReasons)
+    {
+        observedReasons = disconnectReasons.ToArray();
+    }
+
+    Assert(observedStates.Count(state => state is not null) >= 2);
+    Assert(observedStates[0] is not null && observedStates[0]!.Sequence == 1);
+    Assert(observedStates[^1] is null);
+    Assert(observedReasons.Contains("disconnect", StringComparer.Ordinal));
 }
 
 static void SendFrame(NamedPipeClientStream client, byte[] frame)
@@ -230,6 +273,20 @@ static void SendFrame(NamedPipeClientStream client, byte[] frame)
     client.Write(frame, 0, frame.Length);
     client.WriteByte((byte)'\n');
     client.Flush();
+}
+
+static void WaitUntil(Func<bool> condition)
+{
+    var deadline = DateTime.UtcNow.AddSeconds(5);
+    while (!condition())
+    {
+        if (DateTime.UtcNow >= deadline)
+        {
+            throw new InvalidOperationException("Timed out waiting for the bridge state.");
+        }
+
+        Thread.Sleep(10);
+    }
 }
 
 static void YaziProcessInfoUsesBridgeIdentity()

@@ -23,6 +23,8 @@ the host supplies the full \\.\pipe\... path. Other Yazi/Windows versions
 remain unverified, so this remains a compatibility probe and the host must
 treat bridge state as unavailable until a fresh snapshot is received.
 
-The polling interval defaults to 100 ms. It is deliberately conservative and
-must be replaced by event-driven publication or an accepted performance budget
-before production use.
+The polling interval defaults to 100 ms and the reconnect retry interval
+defaults to 1 second. A failed write causes the plugin to reopen the pipe and
+send a new hello followed by a fresh snapshot. The polling loop is deliberately
+conservative and must be replaced by event-driven publication or an accepted
+performance budget before production use.

@@ -54,11 +54,12 @@ package-compatibility workaround, not a user configuration change.
 
 The initial transport is a local named pipe represented behind an
 `IYaziBridgeTransport` interface. The current implementation provides
-`YaziBridgePipeServer`, which uses `PipeOptions.CurrentUserOnly`, one accepted
-connection per generated instance, and a 64 KiB maximum frame. Each connection
-carries newline-delimited UTF-8 JSON with a bounded maximum line length. It
-validates `instanceId` at the protocol boundary; the actual Yazi plugin is not
-enabled by `MainWindow` yet.
+`YaziBridgePipeServer`, which uses `PipeOptions.CurrentUserOnly`, sequential
+connections per generated instance, and a 64 KiB maximum frame. Each
+connection carries newline-delimited UTF-8 JSON with a bounded maximum line
+length. It validates `instanceId` at the protocol boundary; after a
+disconnect, the session requires a new hello and snapshot before state becomes
+actionable again. The actual Yazi plugin is not enabled by `MainWindow` yet.
 
 The pipe carries semantic state only. It does not carry terminal escape
 sequences, keystrokes, file contents, or Shell commands. The bridge process or
@@ -67,9 +68,10 @@ pending instance binding and rejects mismatches. The host passes the pipe name,
 instance ID, and protocol version in the child environment without modifying
 the user's Yazi configuration.
 
-`YaziBridgeSession` owns one transport connection, feeds frames through the
-protocol parser and reducer, publishes available snapshots/updates, and emits
-an unavailable notification on goodbye, protocol failure, or disconnect. It is
+`YaziBridgeSession` owns one active transport connection at a time, feeds
+frames through the protocol parser and reducer, publishes available
+snapshots/updates, and emits an unavailable notification on goodbye, protocol
+failure, or disconnect before accepting a replacement connection. It is
 currently started by `MainWindow`, but its state is not consumed by Shell
 features until the Yazi plugin/configuration contract is approved.
 

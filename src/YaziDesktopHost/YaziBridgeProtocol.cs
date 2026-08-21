@@ -175,7 +175,6 @@ public sealed class YaziBridgePipeServer : IYaziBridgeTransport
 {
     private readonly Guid _instanceId;
     private NamedPipeServerStream? _server;
-    private int _acceptStarted;
     private bool _disposed;
 
     public YaziBridgePipeServer(Guid instanceId)
@@ -196,10 +195,6 @@ public sealed class YaziBridgePipeServer : IYaziBridgeTransport
     public async Task<IYaziBridgeConnection> AcceptAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
-        if (Interlocked.Exchange(ref _acceptStarted, 1) != 0)
-        {
-            throw new InvalidOperationException("A bridge pipe server accepts only one connection.");
-        }
 
         var server = new NamedPipeServerStream(
             PipeName,
@@ -212,6 +207,7 @@ public sealed class YaziBridgePipeServer : IYaziBridgeTransport
         try
         {
             await server.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+            _server = null;
             return new YaziBridgePipeConnection(server);
         }
         catch

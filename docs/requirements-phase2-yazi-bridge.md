@@ -163,5 +163,9 @@ empty selection or cleared hover is distinguishable from an omitted field.
 - Confirm whether the host can start the bridge without changing the user's
   existing Yazi configuration; the temporary fixture proves this for an
   opt-in `init.lua` setup and does not overwrite user configuration.
+- Confirm reconnect behavior with a real Yazi instance after the pipe is
+  interrupted. The host session and plugin probe now retry with hello sequence
+  0 and require a fresh snapshot, but the full real-Yazi reconnect gate remains
+  unvalidated.
 - Confirm the real child-exit signal and shutdown ordering of the selected
   terminal backend before claiming the lifecycle gate complete.

@@ -83,9 +83,10 @@ YAZI_CONFIG_HOME. The plugin was enabled only in that temporary init.lua.
 - The bridge session reached unavailable on transport disconnect.
 
 This proves the pinned plugin/pipe path for the snapshot, hover, selection,
-UTF-8, and disconnect gates. It does not yet prove a clean Yazi child-exit
-notification or reconnect requiring a fresh snapshot; those remain open before
-production Shell integration.
+UTF-8, and disconnect gates. The host session and probe now implement
+reconnection with a fresh hello/snapshot, and the host-side reconnect test
+passes. A full real-Yazi reconnect run and a clean Yazi child-exit notification
+remain open before production Shell integration.
 
 ## References
 

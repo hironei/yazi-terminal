@@ -81,63 +81,93 @@ public sealed class YaziBridgeSession : IAsyncDisposable
     private async Task RunCoreAsync(CancellationToken cancellationToken)
     {
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
-        IYaziBridgeConnection? connection = null;
-        var reason = "disconnect";
+        var unavailableNotificationRaised = false;
 
         try
         {
-            connection = await _transport.AcceptAsync(linkedCancellation.Token).ConfigureAwait(false);
-            while (true)
+            while (!linkedCancellation.IsCancellationRequested)
             {
-                var frame = await connection.ReadFrameAsync(linkedCancellation.Token).ConfigureAwait(false);
-                if (frame is null)
+                IYaziBridgeConnection? connection = null;
+                var reason = "disconnect";
+                try
+                {
+                    connection = await _transport.AcceptAsync(linkedCancellation.Token).ConfigureAwait(false);
+                    reason = await ReadConnectionAsync(connection, linkedCancellation.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
                 {
                     break;
                 }
-
-                YaziBridgeEnvelope message;
-                try
+                catch (ObjectDisposedException) when (_shutdown.IsCancellationRequested)
                 {
-                    message = _parser.Parse(frame, _instanceId);
-                    _reducer.Apply(message);
+                    break;
                 }
                 catch (YaziBridgeProtocolException)
                 {
                     reason = "protocol-error";
-                    break;
                 }
-
-                if (message.Kind is YaziBridgeMessageKind.Snapshot or YaziBridgeMessageKind.State)
+                catch (IOException)
                 {
-                    RaiseStateChanged(_reducer.State);
+                    reason = "io-error";
                 }
-
-                if (message.Kind is YaziBridgeMessageKind.Goodbye or YaziBridgeMessageKind.Error)
+                finally
                 {
-                    reason = message.Kind == YaziBridgeMessageKind.Goodbye ? "goodbye" : "protocol-error";
-                    break;
+                    connection?.Dispose();
+                    if (!linkedCancellation.IsCancellationRequested)
+                    {
+                        _reducer.MarkDisconnected();
+                        RaiseStateChanged(null);
+                        RaiseDisconnected(reason);
+                        unavailableNotificationRaised = true;
+                    }
                 }
             }
         }
-        catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
-        {
-            reason = "cancelled";
-        }
-        catch (ObjectDisposedException) when (_shutdown.IsCancellationRequested)
-        {
-            reason = "cancelled";
-        }
-        catch (IOException)
-        {
-            reason = "io-error";
-        }
         finally
         {
-            connection?.Dispose();
             _transport.Dispose();
             _reducer.MarkDisconnected();
-            RaiseStateChanged(null);
-            RaiseDisconnected(reason);
+            if (!unavailableNotificationRaised)
+            {
+                RaiseStateChanged(null);
+            }
+        }
+    }
+
+    private async Task<string> ReadConnectionAsync(
+        IYaziBridgeConnection connection,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var frame = await connection.ReadFrameAsync(cancellationToken).ConfigureAwait(false);
+            if (frame is null)
+            {
+                return "disconnect";
+            }
+
+            YaziBridgeEnvelope message;
+            try
+            {
+                message = _parser.Parse(frame, _instanceId);
+                _reducer.Apply(message);
+            }
+            catch (YaziBridgeProtocolException)
+            {
+                return "protocol-error";
+            }
+
+            if (message.Kind is YaziBridgeMessageKind.Snapshot or YaziBridgeMessageKind.State)
+            {
+                RaiseStateChanged(_reducer.State);
+            }
+
+            if (message.Kind is YaziBridgeMessageKind.Goodbye or YaziBridgeMessageKind.Error)
+            {
+                return message.Kind == YaziBridgeMessageKind.Goodbye
+                    ? "goodbye"
+                    : "protocol-error";
+            }
         }
     }
 
