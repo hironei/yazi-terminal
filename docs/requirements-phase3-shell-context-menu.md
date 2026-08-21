@@ -82,10 +82,11 @@ The adapter forwards the standard owner-draw and submenu messages to
 ## Remaining manual gates
 
 - Confirming that the `TerminalContainer.MessageHook` receives
-  `WM_CONTEXTMENU` from the EasyWindowsTerminalControl hosted HWND without
-  breaking Yazi mouse reporting. The current implementation handles only the
-  context-menu message when a valid bridge target exists; it leaves ordinary
-  mouse messages untouched.
+  `WM_CONTEXTMENU` or `WM_RBUTTONUP` from the EasyWindowsTerminalControl
+  hosted HWND without breaking Yazi mouse reporting. The implementation uses
+  the right-button release as a fallback because xterm mouse reporting may
+  prevent `WM_CONTEXTMENU` from being generated, and reads bridge state after
+  the normal input dispatch has had a chance to update Yazi.
 - Confirming Shift+F10 and Ctrl+Shift+F10 behavior when the terminal owns
   keyboard focus. The former targets selected/hovered and the latter targets
   `cwd`.

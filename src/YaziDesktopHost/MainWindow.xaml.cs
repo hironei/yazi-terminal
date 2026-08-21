@@ -19,9 +19,11 @@ public partial class MainWindow : Window
     private Task? _processMonitorTask;
     private readonly WindowsShellContextMenuService _shellContextMenu = new();
     private TerminalContainer? _terminalContainer;
+    private bool _shellContextMenuPending;
     private bool _isClosing;
 
     private const int WmContextMenu = 0x007B;
+    private const int WmRButtonUp = 0x0205;
     private const int WmKeyDown = 0x0100;
     private const int WmSysKeyDown = 0x0104;
     private const int VkF10 = 0x79;
@@ -160,9 +162,11 @@ public partial class MainWindow : Window
             return IntPtr.Zero;
         }
 
-        if (message == WmContextMenu)
+        if (message is WmContextMenu or WmRButtonUp)
         {
-            var screenPoint = DecodeScreenPoint(lParam);
+            var screenPoint = message == WmContextMenu
+                ? DecodeScreenPoint(lParam)
+                : DecodeClientPoint(hwnd, lParam);
             if (TryQueueShellContextMenu(
                     YaziShellInvocation.SelectedOrHovered,
                     (int)screenPoint.X,
@@ -193,15 +197,31 @@ public partial class MainWindow : Window
 
     private bool TryQueueShellContextMenu(YaziShellInvocation invocation, int screenX, int screenY)
     {
+        if (_shellContextMenuPending)
+        {
+            return true;
+        }
+
         var resolution = YaziShellTargetResolver.Resolve(_bridgeSession?.State, invocation);
         if (resolution.Status != YaziShellTargetStatus.Available)
         {
             return false;
         }
 
+        _shellContextMenuPending = true;
         _ = Dispatcher.BeginInvoke(
             DispatcherPriority.Input,
-            new Action(() => ShowShellContextMenu(invocation, screenX, screenY)));
+            new Action(() =>
+            {
+                try
+                {
+                    ShowShellContextMenu(invocation, screenX, screenY);
+                }
+                finally
+                {
+                    _shellContextMenuPending = false;
+                }
+            }));
         return true;
     }
 
@@ -432,12 +452,34 @@ public partial class MainWindow : Window
         return new Point(x, y);
     }
 
+    private static Point DecodeClientPoint(IntPtr hwnd, IntPtr lParam)
+    {
+        var value = lParam.ToInt64();
+        var point = new CursorPoint
+        {
+            X = unchecked((short)(value & 0xFFFF)),
+            Y = unchecked((short)((value >> 16) & 0xFFFF)),
+        };
+        if (ClientToScreen(hwnd, ref point))
+        {
+            return new Point(point.X, point.Y);
+        }
+
+        return GetCursorPos(out var cursor)
+            ? new Point(cursor.X, cursor.Y)
+            : new Point(0, 0);
+    }
+
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out CursorPoint point);
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern short GetKeyState(int virtualKey);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool ClientToScreen(IntPtr hwnd, ref CursorPoint point);
 
     private struct CursorPoint
     {

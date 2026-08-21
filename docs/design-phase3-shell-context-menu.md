@@ -62,15 +62,19 @@ can update their submenus.
 ## Invocation integration
 
 `MainWindow` locates the package's hosted `TerminalContainer` and subscribes
-to its native `MessageHook`. On `WM_CONTEXTMENU`, the host queues menu
+to its native `MessageHook`. On `WM_CONTEXTMENU`, or on `WM_RBUTTONUP` when
+xterm mouse reporting prevents context-menu promotion, the host queues menu
 creation after Yazi receives the normal mouse release and reads the bridge
 again for the latest hover/selection. Shift+F10 invokes the selected/hovered
 target, while Ctrl+Shift+F10 explicitly invokes `cwd`.
 
-The native message hook handles only `WM_CONTEXTMENU` and Shift+F10 when a
-valid bridge target exists. Ordinary mouse and keyboard messages remain
-untouched, preserving xterm mouse reporting and Yazi input ownership. The
-hosted HWND discovery and menu presentation remain manual compatibility gates.
+The native message hook handles only `WM_CONTEXTMENU`, `WM_RBUTTONUP`, and
+Shift+F10 when a valid bridge target exists. It does not handle the right-button
+release until after the terminal's normal message subscribers have received it;
+this preserves the Yazi hover/selection update while providing a fallback when
+the terminal does not emit `WM_CONTEXTMENU`. Other mouse and keyboard messages
+remain untouched. The hosted HWND discovery and menu presentation remain
+manual compatibility gates.
 
 ## Testing seams
 
