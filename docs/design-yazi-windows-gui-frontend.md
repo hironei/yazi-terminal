@@ -64,8 +64,11 @@ WPF `TextBox` or parsing screen text.
 
 - Session startup happens after the WPF window is loaded so the control has a
   valid terminal geometry.
-- Terminal output and process exit are handled by the session API and marshaled
-  to the WPF dispatcher only for UI state/error reporting.
+- Terminal output and the session API's `Disconnected` notification are
+  marshaled to the WPF dispatcher only for UI state/error reporting. The
+  current candidate does not expose a child-process exit event through its
+  public session API, so direct exit observation remains an explicit backend
+  acceptance gate.
 - Window close is idempotent: stop accepting new input, dispose the session,
   await or observe child termination, then allow WPF shutdown.
 - Startup failures are classified as executable resolution, ConPTY/session

@@ -25,6 +25,7 @@ public partial class MainWindow : Window
         {
             var executable = YaziExecutableResolver.Resolve();
             _session = new CommandLineSession(executable);
+            _session.Disconnected += Session_Disconnected;
             Terminal.Session = _session;
             Terminal.Focus();
         }
@@ -47,8 +48,42 @@ public partial class MainWindow : Window
         }
 
         _isClosing = true;
+        DisposeSession();
+    }
+
+    private void Session_Disconnected(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_isClosing)
+            {
+                return;
+            }
+
+            AppLogger.Log("yazi_session_disconnected");
+            _isClosing = true;
+            DisposeSession();
+            MessageBox.Show(
+                this,
+                "Yazi stopped unexpectedly. See the application log for details.",
+                "Yazi Desktop Host",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+            Close();
+        }));
+    }
+
+    private void DisposeSession()
+    {
+        if (_session is null)
+        {
+            Terminal.Session = null;
+            return;
+        }
+
+        _session.Disconnected -= Session_Disconnected;
         Terminal.Session = null;
-        _session?.Dispose();
+        _session.Dispose();
         _session = null;
     }
 

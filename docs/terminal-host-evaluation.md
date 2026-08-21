@@ -26,6 +26,7 @@ the first candidate has not yet produced a complete compatibility result.
 | xterm mouse reporting | NOT VERIFIED | Requires interactive mouse actions in Yazi and confirmation that reporting is preserved. |
 | Resize and reflow | NOT VERIFIED | Requires interactive resize while Yazi is running and visual reflow confirmation. |
 | Close cleanup | PASS | The host process and its `yazi` child were absent after the evaluation process was closed. |
+| Unexpected child exit | PARTIAL | The host handles the session's public `Disconnected` notification, but an immediate child exit using `where.exe` did not raise that event. The candidate does not expose a public child-exit event, so direct exit observation remains unresolved. |
 
 ## Acceptance boundary
 
@@ -33,6 +34,10 @@ The automated run proves package integration, compilation, executable
 resolution, host launch, and process cleanup. It does not prove the visual or
 interactive terminal behaviors listed as `NOT VERIFIED`. Those remain manual
 acceptance gates before selecting the candidate for production.
+
+The unexpected-child-exit result is a separate lifecycle limitation. It must
+be resolved by a documented session API guarantee or by replacing the
+candidate with a backend that exposes reliable child-process observation.
 
 If any gate fails, compare the candidate against a WPF control derived from
 Microsoft Windows Terminal, recording the same capability-by-capability
