@@ -17,10 +17,11 @@ and stops when the pipe write fails. `path_kind = "url"` can be supplied for
 non-filesystem Yazi URLs.
 
 The implementation intentionally uses documented `ya.sync`, `ya.async`,
-`cx.active.current`, `cx.active.selected`, and `fs.access` APIs. Opening a
-Windows named pipe through Yazi's filesystem API still requires a real Windows
-Yazi run; until that check passes, this remains a probe and the host must treat
-bridge state as unavailable.
+`cx.active.current`, `cx.active.selected`, and `fs.access` APIs. The pinned
+Windows Yazi 26.5.6 fixture confirmed that `fs.access` can open the pipe when
+the host supplies the full \\.\pipe\... path. Other Yazi/Windows versions
+remain unverified, so this remains a compatibility probe and the host must
+treat bridge state as unavailable until a fresh snapshot is received.
 
 The polling interval defaults to 100 ms. It is deliberately conservative and
 must be replaced by event-driven publication or an accepted performance budget

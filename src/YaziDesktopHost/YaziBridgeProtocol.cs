@@ -191,6 +191,8 @@ public sealed class YaziBridgePipeServer : IYaziBridgeTransport
 
     public string PipeName { get; }
 
+    public string PipePath => $@"\\.\pipe\{PipeName}";
+
     public async Task<IYaziBridgeConnection> AcceptAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();

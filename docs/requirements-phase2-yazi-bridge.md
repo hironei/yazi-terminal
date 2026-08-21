@@ -43,11 +43,13 @@ Windows version, architecture, and bridge plugin revision. The first fixture
 uses the locally verified Yazi `26.5.6`; a newer Yazi documentation version
 must not silently become the supported runtime.
 
-The host generates a cryptographically random instance identifier for every
-launch. The identifier is passed to Yazi using its `--client-id` launch option
-and is included in every bridge message. The bridge must reject messages for a
-different instance. The launch arguments, environment changes, and plugin
-revision are recorded in the compatibility fixture.
+The host generates a cryptographically random GUID instance identifier for
+every launch. Yazi 26.5.6 requires `--client-id` to be a globally unique
+number, so the host also generates a positive cryptographic numeric client ID
+for that launch argument. The GUID is included in every bridge message and the
+bridge must reject messages for a different instance. The launch arguments,
+environment changes, numeric client ID, and plugin revision are recorded in the
+compatibility fixture.
 
 Yazi DDS is the semantic source to evaluate. Its public documentation exposes
 client targeting and events such as `cd` and `hover`, while Lua plugin context
@@ -151,13 +153,15 @@ empty selection or cleared hover is distinguishable from an omitted field.
 ## Open decisions before production integration
 
 - Confirm the minimal plugin/event combination that publishes selected items
-  and hover changes for the supported Yazi version range.
+  and hover changes for the supported Yazi version range. The pinned 26.5.6
+  fixture now passes both changes through the opt-in plugin; a broader version
+  range remains unvalidated.
 - Confirm the named-pipe implementation and current-user-only behavior on the
-  minimum Windows version. The host-side implementation uses
-  `PipeOptions.CurrentUserOnly`; the Yazi plugin's ability to open that pipe
-  through `fs.access` remains unverified.
+  minimum Windows version. The pinned Windows fixture now proves that
+  `PipeOptions.CurrentUserOnly` plus the full Windows pipe path can be opened
+  by `fs.access`; other Yazi/Windows versions remain unvalidated.
 - Confirm whether the host can start the bridge without changing the user's
-  existing Yazi configuration; the current probe uses an opt-in `init.lua`
-  setup and does not overwrite user configuration.
+  existing Yazi configuration; the temporary fixture proves this for an
+  opt-in `init.lua` setup and does not overwrite user configuration.
 - Confirm the real child-exit signal and shutdown ordering of the selected
   terminal backend before claiming the lifecycle gate complete.

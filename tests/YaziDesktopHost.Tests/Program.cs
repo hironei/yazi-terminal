@@ -168,6 +168,7 @@ static void BridgePipeRoundTripsFrame()
 {
     var instanceId = Guid.NewGuid();
     using var server = new YaziBridgePipeServer(instanceId);
+    Assert(server.PipePath == $@"\\.\pipe\{server.PipeName}");
     var acceptTask = server.AcceptAsync();
     using var client = new NamedPipeClientStream(
         ".",
@@ -241,7 +242,8 @@ static void YaziProcessInfoUsesBridgeIdentity()
         $"yazi-desktop-host-{instanceId:N}");
 
     var commandLine = processInfo.CommandLine ?? string.Empty;
-    Assert(commandLine.Contains($"--client-id {instanceId:D}", StringComparison.Ordinal));
+    var clientId = commandLine.Split("--client-id ", StringSplitOptions.None).Last();
+    Assert(long.TryParse(clientId, out var numericClientId) && numericClientId > 0);
     Assert(processInfo.Environment is null);
 }
 

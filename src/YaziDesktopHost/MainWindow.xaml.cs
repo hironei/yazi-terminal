@@ -36,7 +36,7 @@ public partial class MainWindow : Window
                 executable,
                 Environment.CurrentDirectory,
                 instanceId,
-                _bridgeServer.PipeName);
+                _bridgeServer.PipePath);
             _session.Disconnected += Session_Disconnected;
             Terminal.Session = _session;
             Terminal.Focus();

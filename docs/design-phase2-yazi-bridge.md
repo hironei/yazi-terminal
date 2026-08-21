@@ -5,8 +5,9 @@
 This is a design-level Phase 2 contract. The repository now contains the
 protocol core, current-user named-pipe transport, bridge session, and an
 opt-in Yazi plugin probe. The transport/session are not yet wired to Shell
-features, and the plugin's Windows named-pipe compatibility is not accepted
-until a pinned Yazi/`ya` fixture passes the manual gate.
+features, and the pinned Yazi/ya 26.5.6 Windows fixture now passes the plugin
+named-pipe snapshot/hover/selection gate. Broader version compatibility and
+Shell integration remain out of scope.
 
 ## Boundary
 
@@ -24,13 +25,15 @@ to be replaced independently.
 
 ## Startup sequence
 
-1. `MainWindow` creates a random instance identifier and starts the local
+1. `MainWindow` creates a random GUID instance identifier and starts the local
    bridge listener with current-user access control.
-2. The host resolves the pinned Yazi executable and starts it with the
-   instance identifier plus bridge environment variables. The plugin remains
+2. The host resolves the pinned Yazi executable, generates a positive numeric
+   Yazi client ID, and starts it with that `--client-id` plus the bridge
+   environment variables. The plugin remains
    opt-in through the user's Yazi `init.lua` configuration.
 3. The bridge performs a hello handshake containing protocol version,
-   instance identifier, Yazi version, and supported capabilities.
+   instance identifier, and supported capabilities. The exact Yazi/ya version
+   is recorded in the pinned compatibility fixture.
 4. The host accepts state only after the handshake matches the pending launch.
 5. The bridge sends one `snapshot`; only then does the host publish actionable
    `YaziState` to later features.

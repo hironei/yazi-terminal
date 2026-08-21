@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using VirtualTerminal;
 using VirtualTerminal.Interop;
 
@@ -30,7 +31,9 @@ public static class YaziProcessCreationInfoFactory
         return new ProcessCreationInfo
         {
             ApplicationName = executable,
-            CommandLine = $"{Quote(executable)} --client-id {instanceId:D}",
+            // Yazi's --client-id parser accepts a globally unique number, not
+            // the GUID used by the host-side bridge contract.
+            CommandLine = $"{Quote(executable)} --client-id {CreateClientId()}",
             CurrentDirectory = currentDirectory,
         };
     }
@@ -56,6 +59,14 @@ public static class YaziProcessCreationInfoFactory
     private static string Quote(string value)
     {
         return $"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
+    }
+
+    private static long CreateClientId()
+    {
+        Span<byte> bytes = stackalloc byte[sizeof(long)];
+        RandomNumberGenerator.Fill(bytes);
+        var clientId = BitConverter.ToInt64(bytes) & long.MaxValue;
+        return clientId == 0 ? 1 : clientId;
     }
 
     private sealed class BridgeEnvironmentScope : IDisposable

@@ -64,6 +64,29 @@ The implementation decision is:
 4. Treat plugin installation/configuration as an explicit compatibility and
    user-consent decision; do not silently overwrite the user's Yazi config.
 
+## Pinned Windows bridge probe
+
+The pinned Windows fixture was run with yazi.exe and ya.exe 26.5.6
+(aa52643, 2026-05-05), the current host build, and a temporary
+YAZI_CONFIG_HOME. The plugin was enabled only in that temporary init.lua.
+
+- Passing the GUID bridge identifier to --client-id was rejected by Yazi;
+  a positive cryptographic numeric client ID is now generated separately.
+- The Lua plugin emitted hello sequence 0 and snapshot sequence 1.
+- The host accepted live hover and selection updates after sending j and
+  Space through CommandLineSession.
+- A CJK and space-containing working directory was preserved in the live
+  snapshot.
+- fs.access opened the current-user named pipe when the plugin received the
+  full Windows path \\.\pipe\<name>; the short pipe name did not provide this
+  compatibility.
+- The bridge session reached unavailable on transport disconnect.
+
+This proves the pinned plugin/pipe path for the snapshot, hover, selection,
+UTF-8, and disconnect gates. It does not yet prove a clean Yazi child-exit
+notification or reconnect requiring a fresh snapshot; those remain open before
+production Shell integration.
+
 ## References
 
 - [Yazi CLI](https://yazi-rs.github.io/docs/cli/)
