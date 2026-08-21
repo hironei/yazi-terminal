@@ -15,6 +15,8 @@ The reviewed scope and known blockers are documented in:
 - [Phase 2 bridge design](docs/design-phase2-yazi-bridge.md)
 - [Phase 2 Yazi event investigation](docs/phase2-yazi-event-investigation.md)
 - [Phase 2 plugin probe](plugins/yazi-desktop-host.yazi/README.md)
+- [Phase 3 Shell context-menu requirements](docs/requirements-phase3-shell-context-menu.md)
+- [Phase 3 Shell context-menu design](docs/design-phase3-shell-context-menu.md)
 
 Run the host with the .NET 10 SDK from the repository root:
 
