@@ -53,6 +53,12 @@ sequences, keystrokes, file contents, or Shell commands. The bridge process or
 plugin is not trusted to select another host instance; the host owns the
 pending instance binding and rejects mismatches.
 
+`YaziBridgeSession` owns one transport connection, feeds frames through the
+protocol parser and reducer, publishes available snapshots/updates, and emits
+an unavailable notification on goodbye, protocol failure, or disconnect. It is
+currently an isolated service seam; `MainWindow` does not start it until the
+Yazi plugin/configuration contract is approved.
+
 ## DTOs and reducer
 
 The implementation should keep transport DTOs separate from feature-facing

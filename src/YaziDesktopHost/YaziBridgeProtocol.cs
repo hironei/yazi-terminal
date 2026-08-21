@@ -161,7 +161,14 @@ public interface IYaziBridgeTransport : IDisposable
 {
     string PipeName { get; }
 
-    Task<YaziBridgePipeConnection> AcceptAsync(CancellationToken cancellationToken = default);
+    Task<IYaziBridgeConnection> AcceptAsync(CancellationToken cancellationToken = default);
+}
+
+public interface IYaziBridgeConnection : IAsyncDisposable, IDisposable
+{
+    Task<byte[]?> ReadFrameAsync(CancellationToken cancellationToken = default);
+
+    Task WriteFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken cancellationToken = default);
 }
 
 public sealed class YaziBridgePipeServer : IYaziBridgeTransport
@@ -184,7 +191,7 @@ public sealed class YaziBridgePipeServer : IYaziBridgeTransport
 
     public string PipeName { get; }
 
-    public async Task<YaziBridgePipeConnection> AcceptAsync(CancellationToken cancellationToken = default)
+    public async Task<IYaziBridgeConnection> AcceptAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         if (Interlocked.Exchange(ref _acceptStarted, 1) != 0)
@@ -231,7 +238,7 @@ public sealed class YaziBridgePipeServer : IYaziBridgeTransport
     }
 }
 
-public sealed class YaziBridgePipeConnection : IAsyncDisposable, IDisposable
+public sealed class YaziBridgePipeConnection : IYaziBridgeConnection
 {
     private readonly Stream _stream;
     private readonly SemaphoreSlim _writeGate = new(1, 1);

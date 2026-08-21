@@ -14,6 +14,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge reducer invalidates a sequence gap", BridgeReducerInvalidatesSequenceGap),
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
+    ("bridge session publishes state and disconnect", BridgeSessionPublishesStateAndDisconnect),
 };
 
 var failures = new List<string>();
@@ -26,7 +27,7 @@ foreach (var (name, test) in tests)
     }
     catch (Exception exception)
     {
-        failures.Add($"FAIL {name}: {exception.Message}");
+        failures.Add($"FAIL {name}: {exception}");
     }
 }
 
@@ -189,6 +190,44 @@ static void BridgePipeRoundTripsFrame()
     var clientReadTask = reader.ReadLineAsync();
     connection.WriteFrameAsync(frame).GetAwaiter().GetResult();
     Assert(clientReadTask.GetAwaiter().GetResult() == Encoding.UTF8.GetString(frame));
+}
+
+static void BridgeSessionPublishesStateAndDisconnect()
+{
+    var instanceId = Guid.NewGuid();
+    using var server = new YaziBridgePipeServer(instanceId);
+    var session = new YaziBridgeSession(instanceId, server);
+    var states = new List<YaziBridgeState?>();
+    var disconnectReason = string.Empty;
+    session.StateChanged += states.Add;
+    session.Disconnected += reason => disconnectReason = reason;
+    var runTask = session.RunAsync();
+
+    using (var client = new NamedPipeClientStream(
+        ".",
+        server.PipeName,
+        PipeDirection.InOut,
+        PipeOptions.Asynchronous))
+    {
+        client.Connect(5000);
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 1));
+    }
+
+    runTask.GetAwaiter().GetResult();
+    session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+    Assert(states.Count >= 2);
+    Assert(states[0] is not null && states[0]!.Sequence == 1);
+    Assert(states[^1] is null);
+    Assert(disconnectReason == "disconnect");
+}
+
+static void SendFrame(NamedPipeClientStream client, byte[] frame)
+{
+    client.Write(frame, 0, frame.Length);
+    client.WriteByte((byte)'\n');
+    client.Flush();
 }
 
 static byte[] SnapshotFrame(Guid instanceId, ulong sequence) => Frame(
