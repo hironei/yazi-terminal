@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 using EasyWindowsTerminalControl;
 using Microsoft.Terminal.Wpf;
 
@@ -15,7 +17,16 @@ public partial class MainWindow : Window
     private IDisposable? _bridgeEnvironment;
     private CancellationTokenSource? _processMonitorCancellation;
     private Task? _processMonitorTask;
+    private readonly WindowsShellContextMenuService _shellContextMenu = new();
+    private TerminalContainer? _terminalContainer;
     private bool _isClosing;
+
+    private const int WmContextMenu = 0x007B;
+    private const int WmKeyDown = 0x0100;
+    private const int WmSysKeyDown = 0x0104;
+    private const int VkF10 = 0x79;
+    private const int VkShift = 0x10;
+    private const int VkControl = 0x11;
 
     public MainWindow()
     {
@@ -55,6 +66,9 @@ public partial class MainWindow : Window
             _term.TermReady += Term_TermReady;
             _term.TerminalOutput += Term_TerminalOutput;
             TerminalHost.Children.Add(_terminal);
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.Loaded,
+                new Action(AttachTerminalMessageHook));
             _terminal.Focus();
         }
         catch (YaziExecutableNotFoundException)
@@ -87,6 +101,8 @@ public partial class MainWindow : Window
             _term.TerminalOutput -= Term_TerminalOutput;
         }
 
+        DetachTerminalMessageHook();
+
         _processMonitorCancellation?.Cancel();
         _processMonitorCancellation?.Dispose();
         _processMonitorCancellation = null;
@@ -100,6 +116,115 @@ public partial class MainWindow : Window
         _bridgeEnvironment?.Dispose();
         _bridgeEnvironment = null;
         DisposeBridge();
+    }
+
+    private void AttachTerminalMessageHook()
+    {
+        if (_terminalContainer is not null || _terminal is null)
+        {
+            return;
+        }
+
+        _terminalContainer = FindVisualChild<TerminalContainer>(_terminal);
+        if (_terminalContainer is not null)
+        {
+            _terminalContainer.MessageHook += Terminal_MessageHook;
+            AppLogger.Log("shell_context_menu_input_hook_attached");
+        }
+        else
+        {
+            AppLogger.Log("shell_context_menu_input_hook_unavailable");
+        }
+    }
+
+    private void DetachTerminalMessageHook()
+    {
+        if (_terminalContainer is null)
+        {
+            return;
+        }
+
+        _terminalContainer.MessageHook -= Terminal_MessageHook;
+        _terminalContainer = null;
+    }
+
+    private IntPtr Terminal_MessageHook(
+        IntPtr hwnd,
+        int message,
+        IntPtr wParam,
+        IntPtr lParam,
+        ref bool handled)
+    {
+        if (_isClosing)
+        {
+            return IntPtr.Zero;
+        }
+
+        if (message == WmContextMenu)
+        {
+            var screenPoint = DecodeScreenPoint(lParam);
+            if (TryQueueShellContextMenu(
+                    YaziShellInvocation.SelectedOrHovered,
+                    (int)screenPoint.X,
+                    (int)screenPoint.Y))
+            {
+                handled = true;
+            }
+
+            return IntPtr.Zero;
+        }
+
+        if (message is WmKeyDown or WmSysKeyDown
+            && wParam.ToInt32() == VkF10
+            && (GetKeyState(VkShift) & 0x8000) != 0)
+        {
+            var invocation = (GetKeyState(VkControl) & 0x8000) != 0
+                ? YaziShellInvocation.CurrentDirectory
+                : YaziShellInvocation.SelectedOrHovered;
+            if (GetCursorPos(out var cursor)
+                && TryQueueShellContextMenu(invocation, cursor.X, cursor.Y))
+            {
+                handled = true;
+            }
+        }
+
+        return IntPtr.Zero;
+    }
+
+    private bool TryQueueShellContextMenu(YaziShellInvocation invocation, int screenX, int screenY)
+    {
+        var resolution = YaziShellTargetResolver.Resolve(_bridgeSession?.State, invocation);
+        if (resolution.Status != YaziShellTargetStatus.Available)
+        {
+            return false;
+        }
+
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            new Action(() => ShowShellContextMenu(invocation, screenX, screenY)));
+        return true;
+    }
+
+    private void ShowShellContextMenu(YaziShellInvocation invocation, int screenX, int screenY)
+    {
+        if (_isClosing)
+        {
+            return;
+        }
+
+        var resolution = YaziShellTargetResolver.Resolve(_bridgeSession?.State, invocation);
+        if (resolution.Status != YaziShellTargetStatus.Available)
+        {
+            AppLogger.Log($"shell_context_menu_unavailable_{resolution.Reason}");
+            return;
+        }
+
+        var ownerHwnd = new WindowInteropHelper(this).Handle;
+        var result = _shellContextMenu.Show(ownerHwnd, resolution.Target!, screenX, screenY);
+        if (result == WindowsShellContextMenuResult.Failed)
+        {
+            AppLogger.Log("shell_context_menu_failed");
+        }
     }
 
     private void Term_TerminalOutput(object? sender, TerminalOutputEventArgs e)
@@ -271,5 +396,52 @@ public partial class MainWindow : Window
     private static uint Rgb(byte red, byte green, byte blue)
     {
         return EasyTerminalControl.ColorToVal(Color.FromRgb(red, green, blue));
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent)
+        where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            var nested = FindVisualChild<T>(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
+    private static Point DecodeScreenPoint(IntPtr lParam)
+    {
+        var value = lParam.ToInt64();
+        var x = unchecked((short)(value & 0xFFFF));
+        var y = unchecked((short)((value >> 16) & 0xFFFF));
+        if (x == -1 && y == -1 && GetCursorPos(out var cursor))
+        {
+            return new Point(cursor.X, cursor.Y);
+        }
+
+        return new Point(x, y);
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out CursorPoint point);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern short GetKeyState(int virtualKey);
+
+    private struct CursorPoint
+    {
+        public int X;
+        public int Y;
     }
 }

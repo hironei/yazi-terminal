@@ -61,11 +61,16 @@ can update their submenus.
 
 ## Invocation integration
 
-The service is intentionally callable independently of terminal input. The
-next integration step will connect a right-click/keyboard invocation to the
-hosted terminal HWND after verifying the control's input ownership. Until that
-step passes, no WPF event is treated as proof that Yazi's xterm mouse
-reporting remains intact.
+`MainWindow` locates the package's hosted `TerminalContainer` and subscribes
+to its native `MessageHook`. On `WM_CONTEXTMENU`, the host queues menu
+creation after Yazi receives the normal mouse release and reads the bridge
+again for the latest hover/selection. Shift+F10 invokes the selected/hovered
+target, while Ctrl+Shift+F10 explicitly invokes `cwd`.
+
+The native message hook handles only `WM_CONTEXTMENU` and Shift+F10 when a
+valid bridge target exists. Ordinary mouse and keyboard messages remain
+untouched, preserving xterm mouse reporting and Yazi input ownership. The
+hosted HWND discovery and menu presentation remain manual compatibility gates.
 
 ## Testing seams
 

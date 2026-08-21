@@ -81,9 +81,14 @@ The adapter forwards the standard owner-draw and submenu messages to
 
 ## Remaining manual gates
 
-- Discovering the actual right-click/keyboard invocation surface of the
-  EasyWindowsTerminalControl hosted HWND without breaking Yazi mouse
-  reporting.
+- Confirming that the `TerminalContainer.MessageHook` receives
+  `WM_CONTEXTMENU` from the EasyWindowsTerminalControl hosted HWND without
+  breaking Yazi mouse reporting. The current implementation handles only the
+  context-menu message when a valid bridge target exists; it leaves ordinary
+  mouse messages untouched.
+- Confirming Shift+F10 and Ctrl+Shift+F10 behavior when the terminal owns
+  keyboard focus. The former targets selected/hovered and the latter targets
+  `cwd`.
 - Third-party extensions such as TortoiseGit/TortoiseSVN, owner-draw menus,
   submenu message forwarding, elevation prompts, and Windows 11 presentation.
 - Behavior when Yazi reports a path that disappears between bridge publication
