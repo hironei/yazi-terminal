@@ -41,10 +41,12 @@ The host must never infer successful bridge startup from a visible Yazi screen.
 ## Transport framing and security
 
 The initial transport is a local named pipe represented behind an
-`IYaziBridgeTransport` interface. Each connection carries newline-delimited
-UTF-8 JSON with a bounded maximum line length. The implementation configures a
-current-user-only security descriptor (or an equivalent explicit ACL) and
-validates `instanceId` at the protocol boundary.
+`IYaziBridgeTransport` interface. The current implementation provides
+`YaziBridgePipeServer`, which uses `PipeOptions.CurrentUserOnly`, one accepted
+connection per generated instance, and a 64 KiB maximum frame. Each connection
+carries newline-delimited UTF-8 JSON with a bounded maximum line length. It
+validates `instanceId` at the protocol boundary; the actual Yazi bridge/plugin
+is not wired into `MainWindow` yet.
 
 The pipe carries semantic state only. It does not carry terminal escape
 sequences, keystrokes, file contents, or Shell commands. The bridge process or

@@ -1,3 +1,6 @@
+using System.Buffers;
+using System.IO;
+using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 
@@ -53,12 +56,13 @@ public sealed class YaziBridgeProtocolException : Exception
 public sealed class YaziBridgeMessageParser
 {
     public const string SupportedProtocol = "yazi-desktop-host/1";
+    public const int MaxFrameBytes = 64 * 1024;
 
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     public YaziBridgeEnvelope Parse(ReadOnlySpan<byte> frame, Guid expectedInstanceId)
     {
-        if (frame.Length == 0 || frame.Length > 64 * 1024)
+        if (frame.Length == 0 || frame.Length > MaxFrameBytes)
         {
             throw new YaziBridgeProtocolException("Bridge frame size is invalid.");
         }
@@ -150,6 +154,188 @@ public sealed class YaziBridgeMessageParser
         {
             throw new YaziBridgeProtocolException($"Bridge {name} must be a JSON object.");
         }
+    }
+}
+
+public interface IYaziBridgeTransport : IDisposable
+{
+    string PipeName { get; }
+
+    Task<YaziBridgePipeConnection> AcceptAsync(CancellationToken cancellationToken = default);
+}
+
+public sealed class YaziBridgePipeServer : IYaziBridgeTransport
+{
+    private readonly Guid _instanceId;
+    private NamedPipeServerStream? _server;
+    private int _acceptStarted;
+    private bool _disposed;
+
+    public YaziBridgePipeServer(Guid instanceId)
+    {
+        if (instanceId == Guid.Empty)
+        {
+            throw new ArgumentException("The bridge instance identifier must not be empty.", nameof(instanceId));
+        }
+
+        _instanceId = instanceId;
+        PipeName = $"yazi-desktop-host-{instanceId:N}";
+    }
+
+    public string PipeName { get; }
+
+    public async Task<YaziBridgePipeConnection> AcceptAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (Interlocked.Exchange(ref _acceptStarted, 1) != 0)
+        {
+            throw new InvalidOperationException("A bridge pipe server accepts only one connection.");
+        }
+
+        var server = new NamedPipeServerStream(
+            PipeName,
+            PipeDirection.InOut,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        _server = server;
+
+        try
+        {
+            await server.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+            return new YaziBridgePipeConnection(server);
+        }
+        catch
+        {
+            server.Dispose();
+            _server = null;
+            throw;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _server?.Dispose();
+        _server = null;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+}
+
+public sealed class YaziBridgePipeConnection : IAsyncDisposable, IDisposable
+{
+    private readonly Stream _stream;
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private readonly byte[] _readBuffer = new byte[4096];
+    private int _readOffset;
+    private int _readCount;
+    private bool _disposed;
+
+    internal YaziBridgePipeConnection(Stream stream)
+    {
+        _stream = stream;
+    }
+
+    public async Task<byte[]?> ReadFrameAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        var frame = new ArrayBufferWriter<byte>();
+
+        while (true)
+        {
+            if (_readOffset == _readCount)
+            {
+                _readOffset = 0;
+                _readCount = await _stream.ReadAsync(_readBuffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+                if (_readCount == 0)
+                {
+                    if (frame.WrittenCount == 0)
+                    {
+                        return null;
+                    }
+
+                    throw new YaziBridgeProtocolException("Bridge connection ended in the middle of a frame.");
+                }
+            }
+
+            var value = _readBuffer[_readOffset++];
+            if (value == (byte)'\n')
+            {
+                var result = frame.WrittenSpan;
+                if (result.Length > 0 && result[^1] == (byte)'\r')
+                {
+                    return result[..^1].ToArray();
+                }
+
+                return result.ToArray();
+            }
+
+            if (frame.WrittenCount >= YaziBridgeMessageParser.MaxFrameBytes)
+            {
+                throw new YaziBridgeProtocolException("Bridge frame exceeds the maximum size.");
+            }
+
+            frame.GetSpan(1)[0] = value;
+            frame.Advance(1);
+        }
+    }
+
+    public async Task WriteFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (frame.Length == 0 || frame.Length > YaziBridgeMessageParser.MaxFrameBytes)
+        {
+            throw new YaziBridgeProtocolException("Bridge frame size is invalid.");
+        }
+
+        if (frame.Span.IndexOfAny((byte)'\r', (byte)'\n') >= 0)
+        {
+            throw new YaziBridgeProtocolException("Bridge frame contains a line break.");
+        }
+
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _stream.WriteAsync(frame, cancellationToken).ConfigureAwait(false);
+            await _stream.WriteAsync("\n"u8.ToArray(), cancellationToken).ConfigureAwait(false);
+            await _stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _writeGate.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _stream.Dispose();
+        _writeGate.Dispose();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
     }
 }
 

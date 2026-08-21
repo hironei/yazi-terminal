@@ -1,3 +1,6 @@
+using System.IO.Pipes;
+using System.Text;
+
 using YaziDesktopHost;
 
 var tests = new (string Name, Action Test)[]
@@ -10,6 +13,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge reducer applies an ordered update", BridgeReducerAppliesOrderedUpdate),
     ("bridge reducer invalidates a sequence gap", BridgeReducerInvalidatesSequenceGap),
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
+    ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
 };
 
 var failures = new List<string>();
@@ -156,6 +160,35 @@ static void BridgeReducerRequiresFreshSnapshot()
     reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 10), instanceId));
     Assert(reducer.State is not null);
     Assert(reducer.State!.Sequence == 10);
+}
+
+static void BridgePipeRoundTripsFrame()
+{
+    var instanceId = Guid.NewGuid();
+    using var server = new YaziBridgePipeServer(instanceId);
+    var acceptTask = server.AcceptAsync();
+    using var client = new NamedPipeClientStream(
+        ".",
+        server.PipeName,
+        PipeDirection.InOut,
+        PipeOptions.Asynchronous);
+    client.Connect(5000);
+
+    using var connection = acceptTask.GetAwaiter().GetResult();
+    var frame = Frame(instanceId, 0, "hello", new { });
+    var serverReadTask = connection.ReadFrameAsync();
+    client.Write(frame, 0, frame.Length);
+    client.WriteByte((byte)'\r');
+    client.WriteByte((byte)'\n');
+    client.Flush();
+
+    var received = serverReadTask.GetAwaiter().GetResult();
+    Assert(received is not null && received.SequenceEqual(frame));
+
+    using var reader = new StreamReader(client, Encoding.UTF8, leaveOpen: true);
+    var clientReadTask = reader.ReadLineAsync();
+    connection.WriteFrameAsync(frame).GetAwaiter().GetResult();
+    Assert(clientReadTask.GetAwaiter().GetResult() == Encoding.UTF8.GetString(frame));
 }
 
 static byte[] SnapshotFrame(Guid instanceId, ulong sequence) => Frame(
