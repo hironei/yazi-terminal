@@ -148,13 +148,16 @@ empty selection or cleared hover is distinguishable from an omitted field.
 - No acceptance test depends on screen text, rendered coordinates, or a
   terminal-control `OutputText` property.
 
-## Open decisions before implementation
+## Open decisions before production integration
 
 - Confirm the minimal plugin/event combination that publishes selected items
   and hover changes for the supported Yazi version range.
-- Confirm the named-pipe implementation and current-user ACL behavior on the
-  minimum Windows version.
+- Confirm the named-pipe implementation and current-user-only behavior on the
+  minimum Windows version. The host-side implementation uses
+  `PipeOptions.CurrentUserOnly`; the Yazi plugin's ability to open that pipe
+  through `fs.access` remains unverified.
 - Confirm whether the host can start the bridge without changing the user's
-  existing Yazi configuration; if not, define an opt-in configuration path.
+  existing Yazi configuration; the current probe uses an opt-in `init.lua`
+  setup and does not overwrite user configuration.
 - Confirm the real child-exit signal and shutdown ordering of the selected
   terminal backend before claiming the lifecycle gate complete.

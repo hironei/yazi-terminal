@@ -15,6 +15,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session publishes state and disconnect", BridgeSessionPublishesStateAndDisconnect),
+    ("Yazi process info uses bridge identity", YaziProcessInfoUsesBridgeIdentity),
 };
 
 var failures = new List<string>();
@@ -228,6 +229,20 @@ static void SendFrame(NamedPipeClientStream client, byte[] frame)
     client.Write(frame, 0, frame.Length);
     client.WriteByte((byte)'\n');
     client.Flush();
+}
+
+static void YaziProcessInfoUsesBridgeIdentity()
+{
+    var instanceId = Guid.NewGuid();
+    var processInfo = YaziProcessCreationInfoFactory.Create(
+        @"C:\tools\yazi.exe",
+        @"C:\work",
+        instanceId,
+        $"yazi-desktop-host-{instanceId:N}");
+
+    var commandLine = processInfo.CommandLine ?? string.Empty;
+    Assert(commandLine.Contains($"--client-id {instanceId:D}", StringComparison.Ordinal));
+    Assert(processInfo.Environment is null);
 }
 
 static byte[] SnapshotFrame(Guid instanceId, ulong sequence) => Frame(

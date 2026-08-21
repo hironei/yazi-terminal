@@ -7,6 +7,8 @@ namespace YaziDesktopHost;
 public partial class MainWindow : Window
 {
     private CommandLineSession? _session;
+    private YaziBridgePipeServer? _bridgeServer;
+    private YaziBridgeSession? _bridgeSession;
     private bool _isClosing;
 
     public MainWindow()
@@ -24,7 +26,17 @@ public partial class MainWindow : Window
         try
         {
             var executable = YaziExecutableResolver.Resolve();
-            _session = new CommandLineSession(executable);
+            var instanceId = Guid.NewGuid();
+            _bridgeServer = new YaziBridgePipeServer(instanceId);
+            _bridgeSession = new YaziBridgeSession(instanceId, _bridgeServer);
+            _bridgeSession.Disconnected += Bridge_Disconnected;
+            _ = _bridgeSession.RunAsync();
+
+            _session = YaziProcessCreationInfoFactory.StartSession(
+                executable,
+                Environment.CurrentDirectory,
+                instanceId,
+                _bridgeServer.PipeName);
             _session.Disconnected += Session_Disconnected;
             Terminal.Session = _session;
             Terminal.Focus();
@@ -75,6 +87,8 @@ public partial class MainWindow : Window
 
     private void DisposeSession()
     {
+        DisposeBridge();
+
         if (_session is null)
         {
             Terminal.Session = null;
@@ -85,6 +99,29 @@ public partial class MainWindow : Window
         Terminal.Session = null;
         _session.Dispose();
         _session = null;
+    }
+
+    private void DisposeBridge()
+    {
+        if (_bridgeSession is null)
+        {
+            _bridgeServer?.Dispose();
+            _bridgeServer = null;
+            return;
+        }
+
+        _bridgeSession.Disconnected -= Bridge_Disconnected;
+        _bridgeSession.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        _bridgeSession = null;
+        _bridgeServer = null;
+    }
+
+    private void Bridge_Disconnected(string reason)
+    {
+        if (!_isClosing)
+        {
+            AppLogger.Log($"yazi_bridge_disconnected_{reason}");
+        }
     }
 
     private void ShowStartupError(string message)

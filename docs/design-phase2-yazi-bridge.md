@@ -2,11 +2,11 @@
 
 ## Design status
 
-This is a design-level Phase 2 contract. The repository may implement and test
-the pure message parser and state reducer described below, but it does not yet
-add the bridge transport, a Yazi plugin, a named-pipe implementation, or Shell
-integration. Those runtime pieces start only after the open decisions in the
-Phase 2 requirements are resolved against a pinned Yazi/`ya` fixture.
+This is a design-level Phase 2 contract. The repository now contains the
+protocol core, current-user named-pipe transport, bridge session, and an
+opt-in Yazi plugin probe. The transport/session are not yet wired to Shell
+features, and the plugin's Windows named-pipe compatibility is not accepted
+until a pinned Yazi/`ya` fixture passes the manual gate.
 
 ## Boundary
 
@@ -27,7 +27,8 @@ to be replaced independently.
 1. `MainWindow` creates a random instance identifier and starts the local
    bridge listener with current-user access control.
 2. The host resolves the pinned Yazi executable and starts it with the
-   instance identifier and the approved bridge/plugin configuration.
+   instance identifier plus bridge environment variables. The plugin remains
+   opt-in through the user's Yazi `init.lua` configuration.
 3. The bridge performs a hello handshake containing protocol version,
    instance identifier, Yazi version, and supported capabilities.
 4. The host accepts state only after the handshake matches the pending launch.
@@ -38,6 +39,14 @@ to be replaced independently.
 
 The host must never infer successful bridge startup from a visible Yazi screen.
 
+`VirtualTerminal.CommandLine` 1.8.1 cannot currently receive the bridge
+environment as a custom `ProcessCreationInfo.Environment` block: its
+`CreateProcess` path does not set the Unicode-environment creation flag. The
+host therefore sets the three bridge variables only while the synchronous
+`CommandLineSession` constructor creates the child, under a process-local
+gate, and restores the host environment immediately afterward. This is a
+package-compatibility workaround, not a user configuration change.
+
 ## Transport framing and security
 
 The initial transport is a local named pipe represented behind an
@@ -45,19 +54,21 @@ The initial transport is a local named pipe represented behind an
 `YaziBridgePipeServer`, which uses `PipeOptions.CurrentUserOnly`, one accepted
 connection per generated instance, and a 64 KiB maximum frame. Each connection
 carries newline-delimited UTF-8 JSON with a bounded maximum line length. It
-validates `instanceId` at the protocol boundary; the actual Yazi bridge/plugin
-is not wired into `MainWindow` yet.
+validates `instanceId` at the protocol boundary; the actual Yazi plugin is not
+enabled by `MainWindow` yet.
 
 The pipe carries semantic state only. It does not carry terminal escape
 sequences, keystrokes, file contents, or Shell commands. The bridge process or
 plugin is not trusted to select another host instance; the host owns the
-pending instance binding and rejects mismatches.
+pending instance binding and rejects mismatches. The host passes the pipe name,
+instance ID, and protocol version in the child environment without modifying
+the user's Yazi configuration.
 
 `YaziBridgeSession` owns one transport connection, feeds frames through the
 protocol parser and reducer, publishes available snapshots/updates, and emits
 an unavailable notification on goodbye, protocol failure, or disconnect. It is
-currently an isolated service seam; `MainWindow` does not start it until the
-Yazi plugin/configuration contract is approved.
+currently started by `MainWindow`, but its state is not consumed by Shell
+features until the Yazi plugin/configuration contract is approved.
 
 ## DTOs and reducer
 
