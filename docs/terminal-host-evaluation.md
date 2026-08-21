@@ -11,6 +11,34 @@ The comparison candidate is a WPF Terminal Control derived from the Microsoft
 Windows Terminal implementation. It is not implemented in this slice because
 the first candidate has not yet produced a complete compatibility result.
 
+## Alternative comparison
+
+Microsoft's repository contains a WPF `TerminalControl` under
+`src/cascadia/WpfTerminalControl`. The control exposes a terminal connection,
+rows/columns, theme configuration, resize-related state, and the Windows
+Terminal rendering/input stack. Its project currently targets `net472` and
+`net8.0-windows` and packages native x86, x64, and ARM64 binaries, so adopting
+it would require a source-build or packaging strategy in this .NET 10 host.
+See the [official WPF control source](https://github.com/microsoft/terminal/blob/main/src/cascadia/WpfTerminalControl/TerminalControl.xaml.cs)
+and [project file](https://github.com/microsoft/terminal/blob/main/src/cascadia/WpfTerminalControl/WpfTerminalControl.csproj).
+
+| Concern | VirtualTerminal 1.8.1 | Microsoft Windows Terminal WPF control |
+| --- | --- | --- |
+| Initial integration | Low: NuGet WPF control plus ConPTY session | High: source/native build and packaging boundary |
+| Current target fit | Directly documented for this .NET 10 project | Upstream project currently targets .NET Framework 4.7.2 and .NET 8 WPF |
+| Renderer/input maturity | Must be proven against Yazi in this host | Reuses Windows Terminal's renderer/input stack, but still needs Yazi-specific proof |
+| Resize surface | Session/control resize API is available | Control exposes rows/columns and a connection abstraction |
+| Child exit ownership | Public session API did not expose a reliable child-exit event in the probe | Connection implementation can be owned by this host, but the required ConPTY/process wrapper still must be designed |
+| Distribution risk | Package restore and local build currently work | Native architecture-specific artifacts and upstream source cadence must be controlled |
+
+This comparison does not select the Microsoft control automatically. The
+current recommendation is to keep `VirtualTerminal` as the provisional
+implementation candidate while running the same manual Yazi matrix against
+both controls if any VT, input, or lifecycle gate fails. Microsoft's own sample
+documentation describes the WPF console sample as a skeleton and the MiniTerm
+sample as experimental, so a production choice still needs an owned connection
+and cleanup design; see the [Microsoft Terminal samples](https://learn.microsoft.com/en-us/windows/terminal/samples).
+
 ## Evidence collected
 
 | Capability | Result | Evidence or remaining action |
