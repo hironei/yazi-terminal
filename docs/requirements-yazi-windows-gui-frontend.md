@@ -7,9 +7,10 @@ copy its text verbatim into the repository. The user request is to review the
 requirement and execute the repository-aware development workflow. This file
 records the reviewed, testable scope for the first implementation slice.
 
-The repository is an empty initial repository. The first slice is therefore
-limited to Phase 1 (embedded WPF terminal host and Yazi process lifecycle).
-Phases 2-5 remain planned work and are not claimed as implemented here.
+This document is the Phase 1 baseline for the embedded WPF terminal host and
+Yazi process lifecycle. Later bridge, Shell context-menu, and drag-and-drop
+work is specified in separate phase documents so that this baseline does not
+silently expand its acceptance scope.
 
 ## Product goal
 

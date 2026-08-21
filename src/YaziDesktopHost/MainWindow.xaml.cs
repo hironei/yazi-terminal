@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private Task? _processMonitorTask;
     private readonly WindowsShellContextMenuService _shellContextMenu = new();
     private TerminalContainer? _terminalContainer;
+    private WindowsShellDragDropService? _shellDragDrop;
     private bool _shellContextMenuPending;
     private bool _isClosing;
 
@@ -104,6 +105,8 @@ public partial class MainWindow : Window
         }
 
         DetachTerminalMessageHook();
+        _shellDragDrop?.Dispose();
+        _shellDragDrop = null;
 
         _processMonitorCancellation?.Cancel();
         _processMonitorCancellation?.Dispose();
@@ -131,6 +134,10 @@ public partial class MainWindow : Window
         if (_terminalContainer is not null)
         {
             _terminalContainer.MessageHook += Terminal_MessageHook;
+            _shellDragDrop = new WindowsShellDragDropService(
+                () => _bridgeSession?.State,
+                _terminal);
+            _shellDragDrop.Attach(_terminalContainer);
             AppLogger.Log("shell_context_menu_input_hook_attached");
         }
         else
@@ -160,6 +167,11 @@ public partial class MainWindow : Window
         if (_isClosing)
         {
             return IntPtr.Zero;
+        }
+
+        if (_shellDragDrop is not null)
+        {
+            _shellDragDrop.HandleMessage(hwnd, message, wParam, ref handled);
         }
 
         if (message is WmContextMenu or WmRButtonUp)
