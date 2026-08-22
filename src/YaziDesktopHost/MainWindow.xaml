@@ -1,15 +1,34 @@
 <Window x:Class="YaziDesktopHost.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Name="RootWindow"
         Title="Yazi Terminal"
-        Background="Black"
+        Background="{DynamicResource HostBackgroundBrush}"
+        Foreground="{DynamicResource HostForegroundBrush}"
         MinWidth="640"
         MinHeight="360"
         Width="1280"
         Height="800"
         Loaded="Window_Loaded"
         Closing="Window_Closing">
-    <Grid Background="Black">
-        <Grid x:Name="TerminalHost" />
-    </Grid>
+    <DockPanel Background="{DynamicResource HostBackgroundBrush}">
+        <Menu x:Name="ThemeMenu"
+              DockPanel.Dock="Top"
+              Background="{DynamicResource MenuBackgroundBrush}"
+              BorderBrush="{DynamicResource MenuBorderBrush}"
+              Foreground="{DynamicResource HostForegroundBrush}">
+            <MenuItem Header="_Theme">
+                <MenuItem x:Name="DarkThemeMenuItem"
+                          Header="_Dark"
+                          IsCheckable="True"
+                          Click="DarkThemeMenuItem_Click" />
+                <MenuItem x:Name="LightThemeMenuItem"
+                          Header="_Light"
+                          IsCheckable="True"
+                          Click="LightThemeMenuItem_Click" />
+            </MenuItem>
+        </Menu>
+        <Grid x:Name="TerminalHost"
+              Background="{DynamicResource TerminalBackgroundBrush}" />
+    </DockPanel>
 </Window>

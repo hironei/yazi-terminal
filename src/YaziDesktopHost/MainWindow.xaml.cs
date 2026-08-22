@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private YaziShellInvocation? _rightClickInvocation;
     private TerminalWindowSubclass? _terminalWindowSubclass;
     private bool _isClosing;
+    private AppThemeMode _themeMode = AppThemeMode.Dark;
 
     private const int WmContextMenu = 0x007B;
     private const int WmRButtonDown = 0x0204;
@@ -37,6 +38,32 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ApplyTheme(_themeMode);
+    }
+
+    private void DarkThemeMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        ApplyTheme(AppThemeMode.Dark);
+    }
+
+    private void LightThemeMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        ApplyTheme(AppThemeMode.Light);
+    }
+
+    private void ApplyTheme(AppThemeMode mode)
+    {
+        _themeMode = mode;
+        var colors = ThemePalette.For(mode);
+        Resources["HostBackgroundBrush"] = CreateBrush(colors.HostBackground);
+        Resources["HostForegroundBrush"] = CreateBrush(colors.HostForeground);
+        Resources["MenuBackgroundBrush"] = CreateBrush(colors.HostBackground);
+        Resources["MenuBorderBrush"] = CreateBrush(colors.MenuBorder);
+        Resources["TerminalBackgroundBrush"] = CreateBrush(colors.TerminalBackground);
+        DarkThemeMenuItem.IsChecked = mode == AppThemeMode.Dark;
+        LightThemeMenuItem.IsChecked = mode == AppThemeMode.Light;
+
+        ApplyTerminalTheme(colors);
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -64,7 +91,7 @@ public partial class MainWindow : Window
                 StartupCommandLine = YaziProcessLaunchConfiguration.CreateCommandLine(executable),
                 WorkingDirectory = Environment.CurrentDirectory,
                 ConPTYTerm = _term,
-                Theme = CreateTerminalTheme(),
+                Theme = CreateTerminalTheme(ThemePalette.For(_themeMode)),
                 FontFamilyWhenSettingTheme = new FontFamily("MS Gothic"),
                 FontSizeWhenSettingTheme = 14,
                 Win32InputMode = true,
@@ -524,39 +551,46 @@ public partial class MainWindow : Window
         Close();
     }
 
-    private static TerminalTheme CreateTerminalTheme()
+    private static TerminalTheme CreateTerminalTheme(ThemeColors colors)
     {
         return new TerminalTheme
         {
-            DefaultBackground = Rgb(0, 0, 0),
-            DefaultForeground = Rgb(255, 255, 255),
-            DefaultSelectionBackground = Rgb(30, 90, 160),
+            DefaultBackground = Rgb(colors.TerminalBackground),
+            DefaultForeground = Rgb(colors.TerminalForeground),
+            DefaultSelectionBackground = Rgb(colors.TerminalSelectionBackground),
             CursorStyle = CursorStyle.SteadyBlock,
-            ColorTable =
-            [
-                Rgb(0, 0, 0),
-                Rgb(0, 0, 128),
-                Rgb(0, 128, 0),
-                Rgb(0, 128, 128),
-                Rgb(128, 0, 0),
-                Rgb(128, 0, 128),
-                Rgb(128, 128, 0),
-                Rgb(192, 192, 192),
-                Rgb(128, 128, 128),
-                Rgb(0, 0, 255),
-                Rgb(0, 255, 0),
-                Rgb(0, 255, 255),
-                Rgb(255, 0, 0),
-                Rgb(255, 0, 255),
-                Rgb(255, 255, 0),
-                Rgb(255, 255, 255),
-            ],
+            ColorTable = colors.TerminalColorTable.Select(Rgb).ToArray(),
         };
     }
 
-    private static uint Rgb(byte red, byte green, byte blue)
+    private void ApplyTerminalTheme(ThemeColors colors)
     {
-        return EasyTerminalControl.ColorToVal(Color.FromRgb(red, green, blue));
+        var terminal = _terminal?.Terminal;
+        if (terminal is null)
+        {
+            return;
+        }
+
+        terminal.SetTheme(
+            CreateTerminalTheme(colors),
+            "MS Gothic",
+            14,
+            ToMediaColor(colors.TerminalBackground));
+    }
+
+    private static SolidColorBrush CreateBrush(RgbColor color)
+    {
+        return new SolidColorBrush(Color.FromRgb(color.Red, color.Green, color.Blue));
+    }
+
+    private static Color ToMediaColor(RgbColor color)
+    {
+        return Color.FromRgb(color.Red, color.Green, color.Blue);
+    }
+
+    private static uint Rgb(RgbColor color)
+    {
+        return EasyTerminalControl.ColorToVal(Color.FromRgb(color.Red, color.Green, color.Blue));
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent)

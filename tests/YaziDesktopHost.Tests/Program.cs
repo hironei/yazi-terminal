@@ -26,6 +26,7 @@ var tests = new (string Name, Action Test)[]
     ("shell target resolves current directory", ShellTargetResolvesCurrentDirectory),
     ("shell target rejects unavailable, URLs, and empty state", ShellTargetRejectsUnavailableUrlsAndEmptyState),
     ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
+    ("theme palettes keep dark defaults and distinct light colors", ThemePalettesKeepDistinctModes),
 };
 
 var failures = new List<string>();
@@ -460,6 +461,22 @@ static void ShellContextComInterfacesPreserveNativeVtableOrder()
         "GetCommandString",
         "HandleMenuMsg",
         "HandleMenuMsg2");
+}
+
+static void ThemePalettesKeepDistinctModes()
+{
+    var dark = ThemePalette.For(AppThemeMode.Dark);
+    var light = ThemePalette.For(AppThemeMode.Light);
+
+    Assert(dark.TerminalBackground == new RgbColor(0, 0, 0));
+    Assert(dark.TerminalForeground == new RgbColor(255, 255, 255));
+    Assert(light.TerminalBackground == new RgbColor(251, 251, 251));
+    Assert(light.TerminalForeground == new RgbColor(31, 31, 31));
+    Assert(dark.HostBackground != light.HostBackground);
+    Assert(dark.TerminalSelectionBackground != light.TerminalSelectionBackground);
+    Assert(dark.TerminalColorTable.Count == 16);
+    Assert(light.TerminalColorTable.Count == 16);
+    Assert(light.TerminalColorTable[15] == new RgbColor(64, 64, 64));
 }
 
 static void AssertDeclaredMethods(Type declaringType, string nestedTypeName, params string[] expectedNames)
