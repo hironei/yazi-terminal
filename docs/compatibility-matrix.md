@@ -10,7 +10,7 @@ every Windows version, CPU architecture, or Yazi release is supported.
 | Area | Validated value | Status | Boundary |
 | --- | --- | --- | --- |
 | Windows OS | OS version/build `10.0.26200` | PASS | Current fixture only; Windows 10 2004/build `19041` is the minimum candidate floor for the embedded Windows Terminal path, pending a packaged-host test. |
-| Runtime architecture | `win-x64`, AMD64 | PASS | x86 and ARM64 assets are present but have not had a real host/Yazi run. |
+| Runtime architecture | `win-x64`, AMD64 | PASS | x86 and ARM64 are explicitly excluded because the selected Easy backend is x64-only. |
 | .NET SDK | `10.0.400` | PASS | The project targets `net10.0-windows`; no older SDK is claimed. |
 | .NET runtime | `10.0.11`, Windows Desktop runtime | PASS | Framework-dependent versus self-contained distribution remains a release decision. |
 | Yazi | `26.5.6`, revision `aa52643` | PASS | This exact version is the validated fixture; no compatibility range is claimed. |
@@ -18,9 +18,9 @@ every Windows version, CPU architecture, or Yazi release is supported.
 | Bridge protocol | `yazi-desktop-host/1` | PASS | Messages are instance-bound and use the Phase 2 framed sideband transport. |
 | Bridge plugin | Repository revision `409cd5c2bc9298ee040fc2156ee86a0a2970fc12`; `main.lua` SHA-1 `1f3114030654b21ee49d23f46833519e7d62b325` | PASS | The plugin was tested through a temporary Yazi configuration. |
 | Terminal host | `EasyWindowsTerminalControl` `1.0.38` | PASS | Selected for the current implementation; production packaging remains gated. |
-| Windows Terminal dependency | `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | PASS | Native assets are supplied for `win-x86`, `win-x64`, and `win-arm64`. |
+| Windows Terminal dependency | `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | PASS | The product targets the package's `win-x64` native assets; x86 and ARM64 are excluded. |
 | ConPTY dependency | `Microsoft.Windows.Console.ConPTY` `1.24.260710001` | PASS | The package metadata declares MIT and describes Windows `10.0.17763.0` or newer; this is not yet the product minimum. |
-| Native ConPTY assets | `conpty.dll` for `win-x86`, `win-x64`, and `win-arm64` | PASS | Asset presence is not an architecture-specific runtime validation. |
+| Native ConPTY assets | `conpty.dll` for `win-x64` | PASS | The package's x86/ARM64 assets are not product targets. |
 
 The Release framework-dependent `win-x64` publish also passed with
 `PublishReadyToRun=false` after restoring with the `win-x64` RID. The publish
@@ -28,6 +28,13 @@ directory contained `YaziDesktopHost.exe`,
 `EasyWindowsTerminalControl.dll`, `Microsoft.Terminal.Control.dll`, and
 `conpty.dll`. This proves package composition for the current x64 fixture; it
 does not prove that the packaged host starts successfully on another machine.
+
+The project now declares `PlatformTarget=AnyCPU` and the supported
+`RuntimeIdentifiers` `win-x64`. An x86 self-contained startup probe was also
+performed during the architecture review and failed before the window loaded:
+the x86 host (`PE machine 0x014C`) cannot load the x64
+`EasyWindowsTerminalControl.dll` (`PE machine 0x8664`). This is why x86 and
+ARM64 are excluded from the product target.
 
 ## Manual capability result on the current fixture
 
@@ -47,8 +54,8 @@ The following gates remain open before claiming a distributable support range:
    current candidate floor is Windows 10 2004/build `19041`, based on the
    Windows Terminal prerequisite; it is not yet a product support claim.
 2. Decide whether to ship framework-dependent or self-contained output.
-3. Publish and run the host on each claimed architecture, including native
-   asset loading and ConPTY startup.
+3. Run the host on the claimed `win-x64` architecture, including native asset
+   loading and ConPTY startup. x64 is manually passed.
 4. Verify native HWND/WPF airspace behavior in the packaged application,
    including any overlays or future dialogs.
 5. Record the supported Yazi/`ya` version policy and test at least one upgrade
@@ -76,7 +83,8 @@ until the CI package's terms and any required notices are resolved.
 
 ## Explicit non-claims
 
-- Native assets for x86/ARM64 do not constitute a passing runtime test.
+- x86 and ARM64 are not product targets, even though the upstream package
+  contains assets for those architectures.
 - The current OS build does not establish a minimum Windows support version.
 - A successful build does not prove Explorer, IME, Shell extension, elevation,
   cloud-provider, or packaged-overlay behavior.
