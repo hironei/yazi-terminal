@@ -21,6 +21,7 @@ The reviewed scope and known blockers are documented in:
 - [Phase 4 drag-and-drop design](docs/design-phase4-drag-drop.md)
 - [Phase 5 Explorer-to-Yazi drop requirements](docs/requirements-phase5-explorer-to-yazi-drop.md)
 - [Phase 5 Explorer-to-Yazi drop design](docs/design-phase5-explorer-to-yazi-drop.md)
+- [User manual](docs/user-manual.md)
 
 Run the host with the .NET 10 SDK from the repository root:
 
@@ -33,3 +34,14 @@ integration phases must not be implemented by parsing terminal screen text.
 
 For an opt-in terminal color diagnostic, set `YAZI_DESKTOP_HOST_VT_FIXTURE=1`
 before launching. The fixture is intended for manual validation only.
+
+## License
+
+Yazi Desktop Host is released under the [MIT License](LICENSE).
+
+The application also uses third-party components, including
+[`EasyWindowsTerminalControl`](https://github.com/mitchcapper/EasyWindowsTerminalControl),
+the Microsoft Windows Terminal WPF control, and ConPTY packages. Their terms
+and required notices are separate from this project's license. See the
+[compatibility matrix](docs/compatibility-matrix.md) for the current dependency
+and distribution notes.
