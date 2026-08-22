@@ -18,6 +18,50 @@ public static class YaziExecutableResolver
         return Resolve(explicitPath, Environment.GetEnvironmentVariable("PATH"), File.Exists);
     }
 
+    public static string ResolvePairedYa(string yaziPath)
+    {
+        return ResolvePairedYa(
+            yaziPath,
+            Environment.GetEnvironmentVariable("PATH"),
+            File.Exists);
+    }
+
+    public static string ResolvePairedYa(
+        string yaziPath,
+        string? pathEnvironment,
+        Func<string, bool> fileExists)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(yaziPath);
+        ArgumentNullException.ThrowIfNull(fileExists);
+        var fullYaziPath = Path.GetFullPath(yaziPath);
+        var directory = Path.GetDirectoryName(fullYaziPath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            var pairedPath = Path.Combine(directory, "ya.exe");
+            if (fileExists(pairedPath))
+            {
+                return pairedPath;
+            }
+        }
+
+        foreach (var pathDirectory in (pathEnvironment ?? string.Empty)
+                     .Split(Path.PathSeparator))
+        {
+            if (string.IsNullOrWhiteSpace(pathDirectory))
+            {
+                continue;
+            }
+
+            var candidate = Path.Combine(pathDirectory.Trim(), "ya.exe");
+            if (fileExists(candidate))
+            {
+                return Path.GetFullPath(candidate);
+            }
+        }
+
+        throw new YaziExecutableNotFoundException();
+    }
+
     public static string Resolve(
         string? explicitPath,
         string? pathEnvironment,

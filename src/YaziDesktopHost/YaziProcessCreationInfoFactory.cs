@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 
 namespace YaziDesktopHost;
 
+public sealed record YaziProcessLaunchInfo(string CommandLine, string ClientId);
+
 public static class YaziProcessLaunchConfiguration
 {
     private static readonly string[] BridgeEnvironmentNames =
@@ -13,8 +15,16 @@ public static class YaziProcessLaunchConfiguration
 
     public static string CreateCommandLine(string executable)
     {
+        return Create(executable).CommandLine;
+    }
+
+    public static YaziProcessLaunchInfo Create(string executable)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(executable);
-        return $"{Quote(executable)} --client-id {CreateClientId()}";
+        var clientId = CreateClientId().ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return new YaziProcessLaunchInfo(
+            $"{Quote(executable)} --client-id {clientId}",
+            clientId);
     }
 
     public static IDisposable EnterBridgeEnvironment(Guid instanceId, string pipeName)

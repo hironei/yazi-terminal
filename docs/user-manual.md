@@ -116,6 +116,34 @@ To run the host from source:
 dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
 ```
 
+### Command-line directory routing
+
+Starting `YaziTerminal.exe` normally creates a new window. A directory can be
+passed as the first positional argument:
+
+```powershell
+YaziTerminal.exe C:\work\project
+```
+
+To request the most recently launched Yazi Terminal window instead, use
+`--last-instance`:
+
+```powershell
+YaziTerminal.exe --last-instance C:\work\project
+```
+
+The existing window is brought to the foreground and its active Yazi tab is
+asked to change to the directory. If no usable last instance exists, the
+command starts a new window instead. The option is current-user-only and does
+not reuse a Git Bash or other terminal pane.
+
+From Git Bash, quote the executable and directory when either path contains
+spaces:
+
+```bash
+"/c/Tools/Yazi Terminal/YaziTerminal.exe" --last-instance "C:/work/project"
+```
+
 The host resolves `yazi.exe` from `PATH`. To use a specific executable, set
 `YAZI_PATH` before starting it:
 
