@@ -32,6 +32,11 @@ targets.
 
 ## Start the host
 
+For a packaged Windows x64 build, download the latest archive from the
+[GitHub Releases](https://github.com/hironei/yazi-terminal/releases), extract
+it, and start `YaziTerminal.exe`. The framework-dependent release requires the
+.NET 10 Windows Desktop runtime.
+
 From the repository root, run:
 
 ```powershell
@@ -49,6 +54,42 @@ dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
 The host starts Yazi in the host process working directory for the current
 implementation. Yazi remains responsible for file-manager state and file
 operation semantics.
+
+## Plugin installation
+
+The optional `yazi-desktop-host.yazi` bridge plugin publishes Yazi's current
+directory, hovered item, and selection to Yazi Terminal. It is required for the
+host's bridge-backed Shell targeting and Explorer drag-and-drop behavior.
+The current validated fixture is Yazi/`ya` 26.5.6.
+
+The plugin is included in the repository under
+`plugins/yazi-desktop-host.yazi`. From the repository root, copy it into the
+current user's Yazi plugin directory:
+
+```powershell
+$pluginSource = (Resolve-Path 'plugins\yazi-desktop-host.yazi').Path
+$pluginDestination = Join-Path $env:APPDATA 'yazi\config\plugins\yazi-desktop-host.yazi'
+New-Item -ItemType Directory -Force -Path (Split-Path $pluginDestination) | Out-Null
+Copy-Item -LiteralPath $pluginSource -Destination $pluginDestination -Recurse -Force
+```
+
+Add the following line to `%APPDATA%\yazi\config\init.lua`. Merge it with an
+existing file; do not replace the user's other configuration:
+
+```lua
+require("yazi-desktop-host"):setup {}
+```
+
+Restart Yazi Terminal after changing the plugin configuration. The host supplies
+the pipe and instance identifiers to the Yazi child automatically.
+
+To update the plugin, copy the repository directory again. To uninstall it,
+remove the `require("yazi-desktop-host"):setup {}` line from `init.lua` and
+delete `%APPDATA%\yazi\config\plugins\yazi-desktop-host.yazi`.
+
+The plugin currently uses the legacy `yazi-desktop-host` name and bridge
+protocol intentionally; this preserves compatibility with the host and existing
+Yazi configuration while the public product name is Yazi Terminal.
 
 ## Terminal operation
 
@@ -86,6 +127,8 @@ The fixture is for manual validation and is not part of normal Yazi display.
 - Packaged native HWND/WPF overlay behavior remains a separate manual gate.
 - The exact supported Yazi/`ya` version policy is not yet a compatibility range;
   use the pinned fixture until that policy is defined.
+- The bridge plugin is an opt-in compatibility probe and is not a general
+  Yazi-version compatibility guarantee.
 
 ## License
 

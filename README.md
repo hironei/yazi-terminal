@@ -15,11 +15,19 @@ Run the host with the .NET 10 SDK from the repository root:
 dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
 ```
 
+For a packaged Windows x64 build, download the latest archive from the
+[GitHub Releases](https://github.com/hironei/yazi-terminal/releases) page.
+The release archive includes `YaziTerminal.exe`, the required native terminal
+files, this documentation, and the Yazi bridge plugin.
+
 Set `YAZI_PATH` when `yazi.exe` is not available through `PATH`. Later Shell
 integration phases must not be implemented by parsing terminal screen text.
 
 For an opt-in terminal color diagnostic, set `YAZI_DESKTOP_HOST_VT_FIXTURE=1`
 before launching. The fixture is intended for manual validation only.
+
+For bridge-backed Shell integration, follow the
+[Yazi plugin installation guide](docs/user-manual.md#plugin-installation).
 
 ## License
 
