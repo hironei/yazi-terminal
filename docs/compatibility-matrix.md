@@ -19,6 +19,7 @@ every Windows version, CPU architecture, or Yazi release is supported.
 | Bridge plugin | Repository revision `409cd5c2bc9298ee040fc2156ee86a0a2970fc12`; `main.lua` SHA-1 `1f3114030654b21ee49d23f46833519e7d62b325` | PASS | The plugin was tested through a temporary Yazi configuration. |
 | Terminal host | `EasyWindowsTerminalControl` `1.0.38` | PASS | Selected for the current implementation; production packaging remains gated. |
 | Windows Terminal dependency | `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | PASS | Native assets are supplied for `win-x86`, `win-x64`, and `win-arm64`. |
+| ConPTY dependency | `Microsoft.Windows.Console.ConPTY` `1.24.260710001` | PASS | The package metadata declares MIT and describes Windows `10.0.17763.0` or newer; this is not yet the product minimum. |
 | Native ConPTY assets | `conpty.dll` for `win-x86`, `win-x64`, and `win-arm64` | PASS | Asset presence is not an architecture-specific runtime validation. |
 
 The Release framework-dependent `win-x64` publish also passed with
@@ -50,11 +51,26 @@ The following gates remain open before claiming a distributable support range:
    including any overlays or future dialogs.
 5. Record the supported Yazi/`ya` version policy and test at least one upgrade
    and one rejection path for an unsupported pair.
-6. Validate package licensing, native asset redistribution, and installation
+6. Resolve the `CI.Microsoft.Terminal.Wpf` licensing/redistribution evidence,
+   then validate package notices, native asset redistribution, and installation
    layout before release.
 
 Until these gates are closed, the support statement is limited to the current
 Windows `win-x64` fixture and the exact Yazi/`ya` pair recorded above.
+
+## Dependency license evidence
+
+The fixed package metadata was inspected from the local NuGet cache:
+
+| Package | License evidence | Distribution status |
+| --- | --- | --- |
+| `EasyWindowsTerminalControl` `1.0.38` | nuspec license expression `MIT`; upstream commit `0741a4b8853c47bcac4412d005ed4ae1d96d2c13` | Evidence recorded; verify notice obligations in the final package. |
+| `Microsoft.Windows.Console.ConPTY` `1.24.260710001` | nuspec license expression `MIT`; Microsoft Terminal project URL | Evidence recorded; verify notice obligations in the final package. |
+| `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | nuspec has no license expression, license URL, or license file; repackage repository commit `9ae724aa5b080aafbeea2bbf88db630b182cc802` is recorded | **BLOCKED** until the upstream/repackage license and redistribution terms are confirmed. |
+
+NuGet cache signatures and package metadata are not a substitute for a legal
+redistribution review. The application must not claim a distributable package
+until the CI package's terms and any required notices are resolved.
 
 ## Explicit non-claims
 
