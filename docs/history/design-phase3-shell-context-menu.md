@@ -65,8 +65,10 @@ can update their submenus.
 to its native `MessageHook`. On `WM_CONTEXTMENU`, or on `WM_RBUTTONUP` when
 xterm mouse reporting prevents context-menu promotion, the host queues menu
 creation after Yazi receives the normal mouse release and reads the bridge
-again for the latest hover/selection. Shift+F10 invokes the selected/hovered
-target, while Ctrl+Shift+F10 explicitly invokes `cwd`.
+again for the latest hover/selection. A normal right-click invokes the
+selected/hovered target; Shift+right-click explicitly invokes `cwd` (the
+current/parent folder). Shift+F10 invokes the selected/hovered target, while
+Ctrl+Shift+F10 explicitly invokes `cwd`.
 
 The native message hook handles only `WM_CONTEXTMENU`, `WM_RBUTTONUP`, and
 Shift+F10 when a valid bridge target exists. It does not handle the right-button

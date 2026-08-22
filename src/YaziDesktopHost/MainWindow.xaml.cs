@@ -174,13 +174,17 @@ public partial class MainWindow : Window
             _shellDragDrop.HandleMessage(hwnd, message, wParam, ref handled);
         }
 
-        if (message is WmContextMenu or WmRButtonUp)
+        if (message == WmRButtonUp
+            || (message == WmContextMenu && !IsKeyboardContextMenu(lParam)))
         {
             var screenPoint = message == WmContextMenu
                 ? DecodeScreenPoint(lParam)
                 : DecodeClientPoint(hwnd, lParam);
+            var invocation = IsKeyDown(VkShift)
+                ? YaziShellInvocation.CurrentDirectory
+                : YaziShellInvocation.SelectedOrHovered;
             if (TryQueueShellContextMenu(
-                    YaziShellInvocation.SelectedOrHovered,
+                    invocation,
                     (int)screenPoint.X,
                     (int)screenPoint.Y))
             {
@@ -217,6 +221,7 @@ public partial class MainWindow : Window
         var resolution = YaziShellTargetResolver.Resolve(_bridgeSession?.State, invocation);
         if (resolution.Status != YaziShellTargetStatus.Available)
         {
+            AppLogger.Log($"shell_context_menu_unavailable_{invocation}_{resolution.Reason}");
             return false;
         }
 
@@ -464,6 +469,14 @@ public partial class MainWindow : Window
         return new Point(x, y);
     }
 
+    private static bool IsKeyboardContextMenu(IntPtr lParam)
+    {
+        var value = lParam.ToInt64();
+        var x = unchecked((short)(value & 0xFFFF));
+        var y = unchecked((short)((value >> 16) & 0xFFFF));
+        return x == -1 && y == -1;
+    }
+
     private static Point DecodeClientPoint(IntPtr hwnd, IntPtr lParam)
     {
         var value = lParam.ToInt64();
@@ -481,6 +494,8 @@ public partial class MainWindow : Window
             ? new Point(cursor.X, cursor.Y)
             : new Point(0, 0);
     }
+
+    private static bool IsKeyDown(int virtualKey) => (GetKeyState(virtualKey) & 0x8000) != 0;
 
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]

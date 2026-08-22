@@ -68,11 +68,11 @@ ya pkg delete hironei/yazi-terminal:yazi-desktop-host
 ### Manual installation from the repository
 
 The plugin is also included in the release archive and repository under
-`plugins/yazi-desktop-host.yazi`. From the repository root, copy it into the
+`yazi-desktop-host.yazi`. From the repository root, copy it into the
 current user's Yazi plugin directory:
 
 ```powershell
-$pluginSource = (Resolve-Path 'plugins\yazi-desktop-host.yazi').Path
+$pluginSource = (Resolve-Path 'yazi-desktop-host.yazi').Path
 $pluginDestination = Join-Path $env:APPDATA 'yazi\config\plugins\yazi-desktop-host.yazi'
 New-Item -ItemType Directory -Force -Path (Split-Path $pluginDestination) | Out-Null
 Copy-Item -LiteralPath $pluginSource -Destination $pluginDestination -Recurse -Force
@@ -138,6 +138,12 @@ The embedded terminal supports the normal Yazi interaction path, including:
 - xterm mouse reporting
 - terminal resize and reflow
 - alternate-screen rendering and 24-bit color
+
+With the bridge plugin installed and connected, right-clicking opens the
+Windows Shell context menu for the selected or hovered item. Holding `Shift`
+while right-clicking opens the menu for Yazi's current directory (the parent
+folder of the displayed item). The bridge state must be available for either
+operation.
 
 The host also supports Explorer/Desktop drag-and-drop in the validated
 directions. Ctrl/Shift Copy/Move behavior follows the Windows Shell effect
