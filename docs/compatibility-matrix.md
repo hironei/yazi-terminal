@@ -9,7 +9,7 @@ every Windows version, CPU architecture, or Yazi release is supported.
 
 | Area | Validated value | Status | Boundary |
 | --- | --- | --- | --- |
-| Windows OS | OS version/build `10.0.26200` | PASS | The product edition and minimum supported Windows version are not declared. |
+| Windows OS | OS version/build `10.0.26200` | PASS | Current fixture only; Windows 10 2004/build `19041` is the minimum candidate floor for the embedded Windows Terminal path, pending a packaged-host test. |
 | Runtime architecture | `win-x64`, AMD64 | PASS | x86 and ARM64 assets are present but have not had a real host/Yazi run. |
 | .NET SDK | `10.0.400` | PASS | The project targets `net10.0-windows`; no older SDK is claimed. |
 | .NET runtime | `10.0.11`, Windows Desktop runtime | PASS | Framework-dependent versus self-contained distribution remains a release decision. |
@@ -43,7 +43,9 @@ those keys to Yazi.
 
 The following gates remain open before claiming a distributable support range:
 
-1. Declare the minimum Windows version and supported product editions.
+1. Declare the minimum Windows version and supported product editions. The
+   current candidate floor is Windows 10 2004/build `19041`, based on the
+   Windows Terminal prerequisite; it is not yet a product support claim.
 2. Decide whether to ship framework-dependent or self-contained output.
 3. Publish and run the host on each claimed architecture, including native
    asset loading and ConPTY startup.
@@ -80,3 +82,14 @@ until the CI package's terms and any required notices are resolved.
   cloud-provider, or packaged-overlay behavior.
 - The host does not install or overwrite the user's persistent Yazi bridge
   configuration as part of the product implementation.
+
+## External compatibility evidence
+
+- The [Microsoft Terminal repository](https://github.com/microsoft/terminal)
+  documents Windows 10 2004 (build 19041) or later for Windows Terminal.
+- The fixed `Microsoft.Windows.Console.ConPTY` package metadata describes
+  Windows `10.0.17763.0` or newer. This lower ConPTY floor does not override
+  the higher embedded Windows Terminal candidate floor.
+- The [NuGet package page](https://www.nuget.org/packages/CI.Microsoft.Terminal.Wpf/1.25.260303002)
+  identifies the package owner as `CI2NugetRepackageTeam`, but does not provide
+  the missing license terms needed for redistribution approval.
