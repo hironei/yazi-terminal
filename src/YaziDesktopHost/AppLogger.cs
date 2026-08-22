@@ -19,6 +19,16 @@ internal static class AppLogger
             if (exception is not null)
             {
                 line += $" {exception.GetType().Name}";
+                if (exception is ArgumentException argument
+                    && !string.IsNullOrWhiteSpace(argument.ParamName))
+                {
+                    line += $" param={argument.ParamName}";
+                }
+
+                if (exception.HResult != 0)
+                {
+                    line += $" hresult=0x{exception.HResult:X8}";
+                }
             }
 
             lock (SyncRoot)

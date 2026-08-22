@@ -1,7 +1,6 @@
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
-using System.Text;
 using System.Windows.Interop;
 
 namespace YaziDesktopHost;
@@ -18,11 +17,13 @@ public sealed class WindowsShellContextMenuService
 {
     private const uint CommandFirst = 1;
     private const uint CommandLast = 0x7FFF;
-    private const uint CmfNormal = 0;
+    private const uint CmfExplore = 0x00000004;
+    private const uint CmfCanRename = 0x00000010;
     private const uint TpmRetCmd = 0x0100;
     private const uint TpmRightButton = 0x0002;
-    private const uint CmicMaskUnicode = 0x00004000;
-    private const uint CmicMaskPtInvoke = 0x20000000;
+    private const uint MiimString = 0x00000040;
+    private const uint MiimSubmenu = 0x00000004;
+    private const uint MiimId = 0x00000002;
     private const int SwShownormal = 1;
     private const int WmInitMenuPopup = 0x0117;
     private const int WmMeasureItem = 0x002C;
@@ -38,23 +39,14 @@ public sealed class WindowsShellContextMenuService
         int screenX,
         int screenY)
     {
+        var stage = "start";
         try
         {
-            return ShowCore(ownerHwnd, target, screenX, screenY);
-        }
-        catch (COMException exception)
-        {
-            AppLogger.Log("shell_context_menu_failed", exception);
-            return WindowsShellContextMenuResult.Failed;
-        }
-        catch (Win32Exception exception)
-        {
-            AppLogger.Log("shell_context_menu_failed", exception);
-            return WindowsShellContextMenuResult.Failed;
+            return ShowCore(ownerHwnd, target, screenX, screenY, ref stage);
         }
         catch (Exception exception)
         {
-            AppLogger.Log("shell_context_menu_failed", exception);
+            AppLogger.Log($"shell_context_menu_failed_{stage}", exception);
             return WindowsShellContextMenuResult.Failed;
         }
     }
@@ -63,27 +55,33 @@ public sealed class WindowsShellContextMenuService
         IntPtr ownerHwnd,
         YaziShellTarget target,
         int screenX,
-        int screenY)
+        int screenY,
+        ref string stage)
     {
+        stage = "validate";
         if (ownerHwnd == IntPtr.Zero || target.Paths.Count == 0)
         {
             return WindowsShellContextMenuResult.Unsupported;
         }
 
         var pidls = new List<IntPtr>(target.Paths.Count);
+        var childPidls = new List<IntPtr>(target.Paths.Count);
         var parents = new List<IShellFolder>(target.Paths.Count);
         try
         {
             foreach (var path in target.Paths)
             {
+                stage = "parse_display_name";
                 var hr = SHParseDisplayName(path, IntPtr.Zero, out var pidl, 0, out _);
                 ThrowIfFailed(hr, "SHParseDisplayName");
                 pidls.Add(pidl);
 
+                stage = "bind_to_parent";
                 var iidShellFolder = IidShellFolder;
-                hr = SHBindToParent(pidl, ref iidShellFolder, out var parent, out _);
+                hr = SHBindToParent(pidl, ref iidShellFolder, out var parent, out var childPidl);
                 ThrowIfFailed(hr, "SHBindToParent");
                 parents.Add(parent);
+                childPidls.Add(childPidl);
             }
 
             var parentPath = Path.GetDirectoryName(Path.GetFullPath(target.Paths[0]));
@@ -95,24 +93,45 @@ public sealed class WindowsShellContextMenuService
                 return WindowsShellContextMenuResult.Unsupported;
             }
 
-            var childPidls = parents
-                .Zip(pidls, (_, pidl) => GetLastChildPidl(pidl))
-                .ToArray();
-            var iidContextMenu = IidContextMenu;
-            var hrGetMenu = parents[0].GetUIObjectOf(
-                ownerHwnd,
-                (uint)childPidls.Length,
-                childPidls,
-                ref iidContextMenu,
-                IntPtr.Zero,
-                out var contextMenuPointer);
-            ThrowIfFailed(hrGetMenu, "IShellFolder.GetUIObjectOf");
-
-            var contextMenu = (IContextMenu)Marshal.GetObjectForIUnknown(contextMenuPointer);
-            Marshal.Release(contextMenuPointer);
+            var childPidlArray = Marshal.AllocCoTaskMem(IntPtr.Size * childPidls.Count);
+            IntPtr contextMenuPointer = IntPtr.Zero;
             try
             {
-                return ShowMenu(ownerHwnd, contextMenu, screenX, screenY);
+                for (var index = 0; index < childPidls.Count; index++)
+                {
+                    Marshal.WriteIntPtr(childPidlArray, index * IntPtr.Size, childPidls[index]);
+                }
+
+                stage = "get_context_menu";
+                var iidContextMenu = IidContextMenu;
+                var hrGetMenu = parents[0].GetUIObjectOf(
+                    ownerHwnd,
+                    (uint)childPidls.Count,
+                    childPidlArray,
+                    ref iidContextMenu,
+                    IntPtr.Zero,
+                    out contextMenuPointer);
+                ThrowIfFailed(hrGetMenu, "IShellFolder.GetUIObjectOf");
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(childPidlArray);
+            }
+
+            IContextMenu contextMenu;
+            try
+            {
+                contextMenu = (IContextMenu)Marshal.GetObjectForIUnknown(contextMenuPointer);
+            }
+            finally
+            {
+                Marshal.Release(contextMenuPointer);
+            }
+
+            try
+            {
+                stage = "show_menu";
+                return ShowMenu(ownerHwnd, contextMenu, screenX, screenY, ref stage);
             }
             finally
             {
@@ -137,7 +156,8 @@ public sealed class WindowsShellContextMenuService
         IntPtr ownerHwnd,
         IContextMenu contextMenu,
         int screenX,
-        int screenY)
+        int screenY,
+        ref string stage)
     {
         var menu = CreatePopupMenu();
         if (menu == IntPtr.Zero)
@@ -149,13 +169,16 @@ public sealed class WindowsShellContextMenuService
         HwndSourceHook? hook = null;
         try
         {
-            var queryResult = contextMenu.QueryContextMenu(
+            stage = "query_context_menu";
+            var queryResult = QueryContextMenu(
+                contextMenu,
                 menu,
                 0,
                 CommandFirst,
                 CommandLast,
-                CmfNormal);
+                CmfExplore | CmfCanRename);
             ThrowIfFailed(queryResult, "IContextMenu.QueryContextMenu");
+            LogMenuItems(menu, 0);
 
             if (source is not null)
             {
@@ -171,6 +194,7 @@ public sealed class WindowsShellContextMenuService
                 source.AddHook(hook);
             }
 
+            stage = "track_popup_menu";
             var command = TrackPopupMenuEx(
                 menu,
                 TpmRetCmd | TpmRightButton,
@@ -183,17 +207,11 @@ public sealed class WindowsShellContextMenuService
                 return WindowsShellContextMenuResult.Canceled;
             }
 
-            var invokeInfo = new CMINVOKECOMMANDINFOEX
-            {
-                cbSize = (uint)Marshal.SizeOf<CMINVOKECOMMANDINFOEX>(),
-                fMask = CmicMaskUnicode | CmicMaskPtInvoke,
-                hwnd = ownerHwnd,
-                lpVerb = (IntPtr)(command - CommandFirst),
-                lpVerbW = (IntPtr)(command - CommandFirst),
-                nShow = SwShownormal,
-                ptInvoke = new POINT { x = screenX, y = screenY },
-            };
-            ThrowIfFailed(contextMenu.InvokeCommand(ref invokeInfo), "IContextMenu.InvokeCommand");
+            var commandOffset = command - CommandFirst;
+            AppLogger.Log($"shell_context_menu_command_{command}_offset_{commandOffset}");
+            LogMenuItems(menu, 0);
+            stage = "invoke_command";
+            ThrowIfFailed(InvokeCommand(contextMenu, ownerHwnd, commandOffset), "IContextMenu.InvokeCommand");
             return WindowsShellContextMenuResult.Invoked;
         }
         finally
@@ -228,28 +246,119 @@ public sealed class WindowsShellContextMenuService
         }
     }
 
-    private static IntPtr GetLastChildPidl(IntPtr pidl)
+    private static int QueryContextMenu(
+        IContextMenu contextMenu,
+        IntPtr menu,
+        uint index,
+        uint commandFirst,
+        uint commandLast,
+        uint flags)
     {
-        var current = pidl;
-        while (Marshal.ReadInt16(current) != 0)
+        if (contextMenu is IContextMenu3 contextMenu3)
         {
-            var next = current + Marshal.ReadInt16(current);
-            if (Marshal.ReadInt16(next) == 0)
-            {
-                return current;
-            }
-
-            current = next;
+            AppLogger.Log("shell_context_menu_interface_IContextMenu3");
+            return contextMenu3.QueryContextMenu(
+                menu,
+                index,
+                commandFirst,
+                commandLast,
+                flags);
         }
 
-        throw new COMException("The Shell returned an empty PIDL.", unchecked((int)0x80004005));
+        if (contextMenu is IContextMenu2 contextMenu2)
+        {
+            AppLogger.Log("shell_context_menu_interface_IContextMenu2");
+            return contextMenu2.QueryContextMenu(
+                menu,
+                index,
+                commandFirst,
+                commandLast,
+                flags);
+        }
+
+        AppLogger.Log("shell_context_menu_interface_IContextMenu");
+        return contextMenu.QueryContextMenu(
+            menu,
+            index,
+            commandFirst,
+            commandLast,
+            flags);
+    }
+
+    private static int InvokeCommand(
+        IContextMenu contextMenu,
+        IntPtr ownerHwnd,
+        uint commandOffset)
+    {
+        var info = new CMINVOKECOMMANDINFO
+        {
+            cbSize = (uint)Marshal.SizeOf<CMINVOKECOMMANDINFO>(),
+            hwnd = ownerHwnd,
+            lpVerb = (IntPtr)commandOffset,
+            nShow = SwShownormal,
+        };
+        var infoPointer = Marshal.AllocCoTaskMem(Marshal.SizeOf<CMINVOKECOMMANDINFO>());
+        try
+        {
+            Marshal.StructureToPtr(info, infoPointer, fDeleteOld: false);
+            return contextMenu switch
+            {
+                IContextMenu3 contextMenu3 => contextMenu3.InvokeCommand(infoPointer),
+                IContextMenu2 contextMenu2 => contextMenu2.InvokeCommand(infoPointer),
+                _ => contextMenu.InvokeCommand(infoPointer),
+            };
+        }
+        finally
+        {
+            Marshal.DestroyStructure<CMINVOKECOMMANDINFO>(infoPointer);
+            Marshal.FreeCoTaskMem(infoPointer);
+        }
+    }
+
+    private static void LogMenuItems(IntPtr menu, int depth)
+    {
+        if (menu == IntPtr.Zero || depth > 3)
+        {
+            return;
+        }
+
+        var count = GetMenuItemCount(menu);
+        for (var index = 0; index < count; index++)
+        {
+            var textBuffer = Marshal.AllocCoTaskMem(256 * sizeof(char));
+            try
+            {
+                var item = new MENUITEMINFO
+                {
+                    cbSize = (uint)Marshal.SizeOf<MENUITEMINFO>(),
+                    fMask = MiimId | MiimSubmenu | MiimString,
+                    dwTypeData = textBuffer,
+                    cch = 256,
+                };
+                if (!GetMenuItemInfo(menu, (uint)index, true, ref item))
+                {
+                    continue;
+                }
+
+                var text = Marshal.PtrToStringUni(textBuffer) ?? string.Empty;
+                AppLogger.Log($"shell_context_menu_item_depth_{depth}_id_{item.wID}_text_{text}");
+                if (item.hSubMenu != IntPtr.Zero)
+                {
+                    LogMenuItems(item.hSubMenu, depth + 1);
+                }
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(textBuffer);
+            }
+        }
     }
 
     private static void ThrowIfFailed(int hResult, string operation)
     {
         if (hResult < 0)
         {
-            Marshal.ThrowExceptionForHR(hResult);
+            throw new COMException(operation, hResult);
         }
     }
 
@@ -287,6 +396,17 @@ public sealed class WindowsShellContextMenuService
         IntPtr owner,
         IntPtr parameters);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern int GetMenuItemCount(IntPtr menu);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMenuItemInfo(
+        IntPtr menu,
+        uint item,
+        [MarshalAs(UnmanagedType.Bool)] bool byPosition,
+        ref MENUITEMINFO info);
+
     [ComImport]
     [Guid("000214E6-0000-0000-C000-000000000046")]
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -299,7 +419,7 @@ public sealed class WindowsShellContextMenuService
         int CompareIds(IntPtr lParam, IntPtr pidl1, IntPtr pidl2);
         int CreateViewObject(IntPtr hwndOwner, ref Guid riid, out IntPtr result);
         int GetAttributesOf(uint count, IntPtr[] pidls, ref uint attributes);
-        int GetUIObjectOf(IntPtr hwndOwner, uint count, IntPtr[] pidls, ref Guid riid, IntPtr reserved, out IntPtr result);
+        int GetUIObjectOf(IntPtr hwndOwner, uint count, IntPtr pidls, ref Guid riid, IntPtr reserved, out IntPtr result);
         int GetDisplayNameOf(IntPtr pidl, uint flags, out IntPtr name);
         int SetNameOf(IntPtr hwnd, IntPtr pidl, [MarshalAs(UnmanagedType.LPWStr)] string name, uint flags, out IntPtr newPidl);
     }
@@ -309,9 +429,12 @@ public sealed class WindowsShellContextMenuService
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IContextMenu
     {
+        [PreserveSig]
         int QueryContextMenu(IntPtr menu, uint index, uint first, uint last, uint flags);
-        int InvokeCommand(ref CMINVOKECOMMANDINFOEX info);
-        int GetCommandString(IntPtr command, uint flags, IntPtr reserved, StringBuilder name, uint max);
+        [PreserveSig]
+        int InvokeCommand(IntPtr info);
+        [PreserveSig]
+        int GetCommandString(IntPtr command, uint flags, IntPtr reserved, IntPtr name, uint max);
     }
 
     [ComImport]
@@ -319,6 +442,13 @@ public sealed class WindowsShellContextMenuService
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IContextMenu2 : IContextMenu
     {
+        [PreserveSig]
+        new int QueryContextMenu(IntPtr menu, uint index, uint first, uint last, uint flags);
+        [PreserveSig]
+        new int InvokeCommand(IntPtr info);
+        [PreserveSig]
+        new int GetCommandString(IntPtr command, uint flags, IntPtr reserved, IntPtr name, uint max);
+        [PreserveSig]
         int HandleMenuMsg(uint message, IntPtr wParam, IntPtr lParam);
     }
 
@@ -327,18 +457,20 @@ public sealed class WindowsShellContextMenuService
     [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IContextMenu3 : IContextMenu2
     {
+        [PreserveSig]
+        new int QueryContextMenu(IntPtr menu, uint index, uint first, uint last, uint flags);
+        [PreserveSig]
+        new int InvokeCommand(IntPtr info);
+        [PreserveSig]
+        new int GetCommandString(IntPtr command, uint flags, IntPtr reserved, IntPtr name, uint max);
+        [PreserveSig]
+        new int HandleMenuMsg(uint message, IntPtr wParam, IntPtr lParam);
+        [PreserveSig]
         int HandleMenuMsg2(uint message, IntPtr wParam, IntPtr lParam, out IntPtr result);
     }
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct POINT
-    {
-        public int x;
-        public int y;
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct CMINVOKECOMMANDINFOEX
+    private struct CMINVOKECOMMANDINFO
     {
         public uint cbSize;
         public uint fMask;
@@ -349,11 +481,22 @@ public sealed class WindowsShellContextMenuService
         public int nShow;
         public uint dwHotKey;
         public IntPtr hIcon;
-        public IntPtr lpTitle;
-        public IntPtr lpVerbW;
-        public IntPtr lpParametersW;
-        public IntPtr lpDirectoryW;
-        public IntPtr lpTitleW;
-        public POINT ptInvoke;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct MENUITEMINFO
+    {
+        public uint cbSize;
+        public uint fMask;
+        public uint fType;
+        public uint fState;
+        public uint wID;
+        public IntPtr hSubMenu;
+        public IntPtr hbmpChecked;
+        public IntPtr hbmpUnchecked;
+        public IntPtr dwItemData;
+        public IntPtr dwTypeData;
+        public uint cch;
+        public IntPtr hbmpItem;
     }
 }

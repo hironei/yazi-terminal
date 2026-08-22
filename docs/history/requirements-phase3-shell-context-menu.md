@@ -46,8 +46,10 @@ The target resolver accepts an available bridge state and one invocation kind:
 
 Every path in the chosen target set must have `kind = filesystem`. A URL, an
 unavailable state, an empty target, or an invalid path set is not actionable.
-The resolver does not check existence or canonicalize paths; the Shell owns
-that interpretation immediately before menu creation.
+The resolver converts fully qualified Windows-compatible values, including
+forward-slash drive paths and `file:` URIs, to Windows path syntax. Relative,
+non-file URI, and invalid values are rejected; the resolver does not require
+the path to exist.
 
 ## Shell API contract
 
@@ -81,12 +83,13 @@ The adapter forwards the standard owner-draw and submenu messages to
 
 ## Remaining manual gates
 
-- Confirming that the `TerminalContainer.MessageHook` receives
-  `WM_CONTEXTMENU` or `WM_RBUTTONUP` from the EasyWindowsTerminalControl
-  hosted HWND without breaking Yazi mouse reporting. The implementation uses
-  the right-button release as a fallback because xterm mouse reporting may
-  prevent `WM_CONTEXTMENU` from being generated, and reads bridge state after
-  the normal input dispatch has had a chance to update Yazi.
+- Confirming that the `TerminalContainer` native `Handle` WndProc subclass
+  receives `WM_RBUTTONDOWN`/`WM_RBUTTONUP` and `WM_CONTEXTMENU` from the
+  EasyWindowsTerminalControl hosted HWND without breaking Yazi mouse
+  reporting. The implementation suppresses the ordinary right-click action
+  only while bridge state is available, then reads the latest bridge state
+  before showing the Shell menu. The WPF `MessageHook` remains the fallback
+  when native subclassing is unavailable.
 - Confirming Shift+F10 and Ctrl+Shift+F10 behavior when the terminal owns
   keyboard focus. The former targets selected/hovered and the latter targets
   `cwd`.
