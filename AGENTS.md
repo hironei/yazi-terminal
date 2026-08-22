@@ -28,7 +28,7 @@ The test project is an executable test suite; report each failed test rather
 than treating a nonzero exit as a successful run.
 
 For a release candidate, publish only `win-x64` and include the MIT `LICENSE`,
-README, user manual, and the `plugins/yazi-desktop-host.yazi` directory.
+README, user manual, and the `yazi-desktop-host.yazi` directory.
 
 ## Documentation and release
 

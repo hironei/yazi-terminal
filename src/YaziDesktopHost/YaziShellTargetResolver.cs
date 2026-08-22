@@ -66,9 +66,22 @@ public static class YaziShellTargetResolver
                 "non-filesystem-path");
         }
 
+        var normalizedPaths = new List<string>(paths.Count);
+        foreach (var path in paths)
+        {
+            if (!WindowsShellPathNormalizer.TryNormalize(path.Value, out var normalizedPath))
+            {
+                return YaziShellTargetResolution.Rejected(
+                    YaziShellTargetStatus.Unsupported,
+                    "invalid-filesystem-path");
+            }
+
+            normalizedPaths.Add(normalizedPath);
+        }
+
         return YaziShellTargetResolution.Available(new YaziShellTarget(
             invocation,
-            paths.Select(path => path.Value).ToArray(),
+            normalizedPaths,
             state.Sequence));
     }
 }

@@ -25,6 +25,12 @@ previous actionable state after the bridge reports unavailable or disconnect.
 The bridge state sequence is retained in the state object for diagnostics, but
 the resolver never attempts to repair a sequence gap.
 
+Filesystem values published by the Yazi bridge are normalized at the Shell
+target boundary. Windows drive paths using `/` separators and `file:` URIs are
+converted to fully qualified Windows paths before any Shell API call; relative,
+non-file URI, and otherwise invalid values are rejected as unsupported. The
+original bridge state remains unchanged.
+
 ## Target resolution
 
 `YaziShellTargetResolver` returns a typed result rather than throwing for
@@ -61,20 +67,22 @@ can update their submenus.
 
 ## Invocation integration
 
-`MainWindow` locates the package's hosted `TerminalContainer` and subscribes
-to its native `MessageHook`. On `WM_CONTEXTMENU`, or on `WM_RBUTTONUP` when
-xterm mouse reporting prevents context-menu promotion, the host queues menu
-creation after Yazi receives the normal mouse release and reads the bridge
-again for the latest hover/selection. Shift+F10 invokes the selected/hovered
+`MainWindow` locates the package's hosted `TerminalContainer` and uses its
+public native `Handle` for a WndProc subclass. On `WM_RBUTTONDOWN` and
+`WM_RBUTTONUP`, the host suppresses the terminal's ordinary right-click action
+when the bridge is available, then queues menu creation after the release. This
+is required because the WPF `MessageHook` does not guarantee interception of
+messages delivered to the hosted terminal child window. A normal right-click
+invokes the selected/hovered target; Shift+right-click explicitly invokes
+`cwd` (the current/parent folder). Shift+F10 invokes the selected/hovered
 target, while Ctrl+Shift+F10 explicitly invokes `cwd`.
 
-The native message hook handles only `WM_CONTEXTMENU`, `WM_RBUTTONUP`, and
-Shift+F10 when a valid bridge target exists. It does not handle the right-button
-release until after the terminal's normal message subscribers have received it;
-this preserves the Yazi hover/selection update while providing a fallback when
-the terminal does not emit `WM_CONTEXTMENU`. Other mouse and keyboard messages
-remain untouched. The hosted HWND discovery and menu presentation remain
-manual compatibility gates.
+The WndProc subclass handles only the right-button messages, `WM_CONTEXTMENU`,
+and Shift+F10. The existing `TerminalContainer.MessageHook` remains attached
+for drag-and-drop and is retained as a fallback when native subclassing is not
+available. Shell API failures are logged with the operation stage and HRESULT;
+paths and menu text are not persisted. The hosted HWND discovery and menu
+presentation remain manual compatibility gates.
 
 ## Testing seams
 

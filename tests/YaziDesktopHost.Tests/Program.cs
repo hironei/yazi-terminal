@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Reflection;
 using System.Text;
 
 using YaziDesktopHost;
@@ -20,8 +21,11 @@ var tests = new (string Name, Action Test)[]
     ("shell target prefers selected paths", ShellTargetPrefersSelectedPaths),
     ("shell target preserves multiple selection", ShellTargetPreservesMultipleSelection),
     ("shell target falls back to hovered path", ShellTargetFallsBackToHoveredPath),
+    ("shell target normalizes Windows path separators", ShellTargetNormalizesWindowsPathSeparators),
+    ("shell target normalizes file URI", ShellTargetNormalizesFileUri),
     ("shell target resolves current directory", ShellTargetResolvesCurrentDirectory),
     ("shell target rejects unavailable, URLs, and empty state", ShellTargetRejectsUnavailableUrlsAndEmptyState),
+    ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
 };
 
 var failures = new List<string>();
@@ -368,6 +372,30 @@ static void ShellTargetFallsBackToHoveredPath()
     Assert(result.Target!.Paths.SequenceEqual([@"C:\資料\日本語.txt"]));
 }
 
+static void ShellTargetNormalizesWindowsPathSeparators()
+{
+    var state = AvailableState(
+        hovered: new YaziBridgePath(YaziBridgePathKind.Filesystem, "C:/work/hovered.txt"),
+        selected: []);
+
+    var result = YaziShellTargetResolver.Resolve(state, YaziShellInvocation.SelectedOrHovered);
+
+    Assert(result.Status == YaziShellTargetStatus.Available);
+    Assert(result.Target!.Paths.SequenceEqual([@"C:\work\hovered.txt"]));
+}
+
+static void ShellTargetNormalizesFileUri()
+{
+    var state = AvailableState(
+        hovered: new YaziBridgePath(YaziBridgePathKind.Filesystem, "file:///C:/work/hovered.txt"),
+        selected: []);
+
+    var result = YaziShellTargetResolver.Resolve(state, YaziShellInvocation.SelectedOrHovered);
+
+    Assert(result.Status == YaziShellTargetStatus.Available);
+    Assert(result.Target!.Paths.SequenceEqual([@"C:\work\hovered.txt"]));
+}
+
 static void ShellTargetPreservesMultipleSelection()
 {
     var selected = new YaziBridgePath[]
@@ -412,6 +440,38 @@ static void ShellTargetRejectsUnavailableUrlsAndEmptyState()
         AvailableState(hovered: null, selected: []),
         YaziShellInvocation.SelectedOrHovered);
     Assert(empty.Status == YaziShellTargetStatus.Empty);
+}
+
+static void ShellContextComInterfacesPreserveNativeVtableOrder()
+{
+    var serviceType = typeof(WindowsShellContextMenuService);
+    AssertDeclaredMethods(
+        serviceType,
+        "IContextMenu2",
+        "QueryContextMenu",
+        "InvokeCommand",
+        "GetCommandString",
+        "HandleMenuMsg");
+    AssertDeclaredMethods(
+        serviceType,
+        "IContextMenu3",
+        "QueryContextMenu",
+        "InvokeCommand",
+        "GetCommandString",
+        "HandleMenuMsg",
+        "HandleMenuMsg2");
+}
+
+static void AssertDeclaredMethods(Type declaringType, string nestedTypeName, params string[] expectedNames)
+{
+    var nestedType = declaringType.GetNestedType(nestedTypeName, BindingFlags.NonPublic)
+        ?? throw new InvalidOperationException($"Missing nested type: {nestedTypeName}");
+    var actualNames = nestedType
+        .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+        .OrderBy(method => method.MetadataToken)
+        .Select(method => method.Name)
+        .ToArray();
+    Assert(actualNames.SequenceEqual(expectedNames));
 }
 
 static YaziBridgeState AvailableState(YaziBridgePath? hovered, IReadOnlyList<YaziBridgePath> selected) =>

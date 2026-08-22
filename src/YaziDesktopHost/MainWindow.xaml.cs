@@ -21,9 +21,12 @@ public partial class MainWindow : Window
     private TerminalContainer? _terminalContainer;
     private WindowsShellDragDropService? _shellDragDrop;
     private bool _shellContextMenuPending;
+    private YaziShellInvocation? _rightClickInvocation;
+    private TerminalWindowSubclass? _terminalWindowSubclass;
     private bool _isClosing;
 
     private const int WmContextMenu = 0x007B;
+    private const int WmRButtonDown = 0x0204;
     private const int WmRButtonUp = 0x0205;
     private const int WmKeyDown = 0x0100;
     private const int WmSysKeyDown = 0x0104;
@@ -138,6 +141,19 @@ public partial class MainWindow : Window
                 () => _bridgeSession?.State,
                 _terminal);
             _shellDragDrop.Attach(_terminalContainer);
+
+            try
+            {
+                _terminalWindowSubclass = TerminalWindowSubclass.Attach(
+                    _terminalContainer.Handle,
+                    HandleTerminalWindowMessage);
+                AppLogger.Log($"shell_context_menu_native_hook_attached_{_terminalContainer.Handle.ToInt64():X}");
+            }
+            catch (Exception exception)
+            {
+                AppLogger.Log("shell_context_menu_native_hook_failed", exception);
+            }
+
             AppLogger.Log("shell_context_menu_input_hook_attached");
         }
         else
@@ -154,6 +170,8 @@ public partial class MainWindow : Window
         }
 
         _terminalContainer.MessageHook -= Terminal_MessageHook;
+        _terminalWindowSubclass?.Dispose();
+        _terminalWindowSubclass = null;
         _terminalContainer = null;
     }
 
@@ -174,15 +192,46 @@ public partial class MainWindow : Window
             _shellDragDrop.HandleMessage(hwnd, message, wParam, ref handled);
         }
 
-        if (message is WmContextMenu or WmRButtonUp)
+        if (_terminalWindowSubclass is not null)
+        {
+            return IntPtr.Zero;
+        }
+
+        if (message == WmRButtonDown)
+        {
+            var invocation = IsKeyDown(VkShift)
+                ? YaziShellInvocation.CurrentDirectory
+                : YaziShellInvocation.SelectedOrHovered;
+            _rightClickInvocation = CanInterceptShellContextMenu()
+                ? invocation
+                : null;
+            if (_rightClickInvocation is not null)
+            {
+                handled = true;
+            }
+
+            return IntPtr.Zero;
+        }
+
+        if (message == WmRButtonUp
+            || (message == WmContextMenu && !IsKeyboardContextMenu(lParam)))
         {
             var screenPoint = message == WmContextMenu
                 ? DecodeScreenPoint(lParam)
                 : DecodeClientPoint(hwnd, lParam);
+            var invocation = _rightClickInvocation ?? (IsKeyDown(VkShift)
+                ? YaziShellInvocation.CurrentDirectory
+                : YaziShellInvocation.SelectedOrHovered);
+            var suppressNormalInput = _rightClickInvocation is not null;
+            _rightClickInvocation = null;
             if (TryQueueShellContextMenu(
-                    YaziShellInvocation.SelectedOrHovered,
+                    invocation,
                     (int)screenPoint.X,
                     (int)screenPoint.Y))
+            {
+                handled = true;
+            }
+            else if (suppressNormalInput)
             {
                 handled = true;
             }
@@ -217,6 +266,7 @@ public partial class MainWindow : Window
         var resolution = YaziShellTargetResolver.Resolve(_bridgeSession?.State, invocation);
         if (resolution.Status != YaziShellTargetStatus.Available)
         {
+            AppLogger.Log($"shell_context_menu_unavailable_{invocation}_{resolution.Reason}");
             return false;
         }
 
@@ -237,6 +287,89 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private bool CanInterceptShellContextMenu()
+    {
+        return _bridgeSession?.State?.Availability == YaziBridgeAvailability.Available;
+    }
+
+    private bool HandleTerminalWindowMessage(
+        IntPtr hwnd,
+        int message,
+        IntPtr wParam,
+        IntPtr lParam)
+    {
+        if (_isClosing)
+        {
+            return false;
+        }
+
+        if (message is WmRButtonDown or WmRButtonUp or WmContextMenu or WmKeyDown or WmSysKeyDown)
+        {
+            AppLogger.Log(
+                $"shell_context_menu_native_message_{MessageName(message)}_hwnd_{hwnd.ToInt64():X}"
+                + $"_shift_{IsKeyDown(VkShift)}_bridge_{CanInterceptShellContextMenu()}");
+        }
+
+        if (message == WmRButtonDown)
+        {
+            var invocation = IsKeyDown(VkShift)
+                ? YaziShellInvocation.CurrentDirectory
+                : YaziShellInvocation.SelectedOrHovered;
+            _rightClickInvocation = CanInterceptShellContextMenu() ? invocation : null;
+            return _rightClickInvocation is not null;
+        }
+
+        if (message == WmRButtonUp)
+        {
+            var invocation = _rightClickInvocation ?? (IsKeyDown(VkShift)
+                ? YaziShellInvocation.CurrentDirectory
+                : YaziShellInvocation.SelectedOrHovered);
+            var suppressNormalInput = _rightClickInvocation is not null;
+            _rightClickInvocation = null;
+            var screenPoint = DecodeClientPoint(hwnd, lParam);
+            return TryQueueShellContextMenu(
+                    invocation,
+                    (int)screenPoint.X,
+                    (int)screenPoint.Y)
+                || suppressNormalInput;
+        }
+
+        if (message == WmContextMenu && !IsKeyboardContextMenu(lParam))
+        {
+            var screenPoint = DecodeScreenPoint(lParam);
+            var invocation = IsKeyDown(VkShift)
+                ? YaziShellInvocation.CurrentDirectory
+                : YaziShellInvocation.SelectedOrHovered;
+            return TryQueueShellContextMenu(
+                invocation,
+                (int)screenPoint.X,
+                (int)screenPoint.Y);
+        }
+
+        if (message is WmKeyDown or WmSysKeyDown
+            && wParam.ToInt64() == VkF10
+            && IsKeyDown(VkShift))
+        {
+            var invocation = IsKeyDown(VkControl)
+                ? YaziShellInvocation.CurrentDirectory
+                : YaziShellInvocation.SelectedOrHovered;
+            return GetCursorPos(out var cursor)
+                && TryQueueShellContextMenu(invocation, cursor.X, cursor.Y);
+        }
+
+        return false;
+    }
+
+    private static string MessageName(int message) => message switch
+    {
+        WmRButtonDown => "rbutton_down",
+        WmRButtonUp => "rbutton_up",
+        WmContextMenu => "context_menu",
+        WmKeyDown => "key_down",
+        WmSysKeyDown => "sys_key_down",
+        _ => message.ToString("X4"),
+    };
+
     private void ShowShellContextMenu(YaziShellInvocation invocation, int screenX, int screenY)
     {
         if (_isClosing)
@@ -252,11 +385,7 @@ public partial class MainWindow : Window
         }
 
         var ownerHwnd = new WindowInteropHelper(this).Handle;
-        var result = _shellContextMenu.Show(ownerHwnd, resolution.Target!, screenX, screenY);
-        if (result == WindowsShellContextMenuResult.Failed)
-        {
-            AppLogger.Log("shell_context_menu_failed");
-        }
+        _shellContextMenu.Show(ownerHwnd, resolution.Target!, screenX, screenY);
     }
 
     private void Term_TerminalOutput(object? sender, TerminalOutputEventArgs e)
@@ -464,6 +593,14 @@ public partial class MainWindow : Window
         return new Point(x, y);
     }
 
+    private static bool IsKeyboardContextMenu(IntPtr lParam)
+    {
+        var value = lParam.ToInt64();
+        var x = unchecked((short)(value & 0xFFFF));
+        var y = unchecked((short)((value >> 16) & 0xFFFF));
+        return x == -1 && y == -1;
+    }
+
     private static Point DecodeClientPoint(IntPtr hwnd, IntPtr lParam)
     {
         var value = lParam.ToInt64();
@@ -481,6 +618,8 @@ public partial class MainWindow : Window
             ? new Point(cursor.X, cursor.Y)
             : new Point(0, 0);
     }
+
+    private static bool IsKeyDown(int virtualKey) => (GetKeyState(virtualKey) & 0x8000) != 0;
 
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
