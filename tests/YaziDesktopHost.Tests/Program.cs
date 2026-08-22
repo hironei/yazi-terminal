@@ -8,7 +8,21 @@ var tests = new (string Name, Action Test)[]
 {
     ("explicit path takes precedence", ExplicitPathTakesPrecedence),
     ("PATH lookup finds yazi.exe", PathLookupFindsExecutable),
+    ("paired ya lookup prefers the yazi directory", PairedYaLookupPrefersYaziDirectory),
     ("missing executable is classified", MissingExecutableIsClassified),
+    ("command line options preserve new-window default", CommandLineOptionsPreserveNewWindowDefault),
+    ("command line options select last instance", CommandLineOptionsSelectLastInstance),
+    ("last-instance protocol validates control frames", LastInstanceProtocolValidatesControlFrames),
+    ("last-instance frame reader rejects oversized frames", LastInstanceFrameReaderRejectsOversizedFrames),
+    ("last-instance registry publishes and removes current endpoint", LastInstanceRegistryPublishesAndRemovesCurrentEndpoint),
+    ("last-instance registry handles missing and malformed metadata", LastInstanceRegistryHandlesMissingAndMalformedMetadata),
+    ("last-instance control server disables after publication failure", LastInstanceControlServerDisablesAfterPublicationFailure),
+    ("last-instance client falls back for an unreachable endpoint", LastInstanceClientFallsBackForUnreachableEndpoint),
+    ("last-instance client rejects invalid endpoint names", LastInstanceClientRejectsInvalidEndpointNames),
+    ("last-instance client times out while waiting for ACK", LastInstanceClientTimesOutWhileWaitingForAcknowledgement),
+    ("last-instance client rejects an invalid ACK frame", LastInstanceClientRejectsInvalidAcknowledgementFrame),
+    ("last-instance control pipe accepts a directory request", LastInstanceControlPipeAcceptsDirectoryRequest),
+    ("last-instance control pipe returns a negative ACK", LastInstanceControlPipeReturnsNegativeAcknowledgement),
     ("bridge parser accepts a CJK snapshot", BridgeParserAcceptsCjkSnapshot),
     ("bridge parser rejects a wrong instance", BridgeParserRejectsWrongInstance),
     ("bridge reducer applies an ordered update", BridgeReducerAppliesOrderedUpdate),
@@ -17,6 +31,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("Yazi command line uses bridge identity", YaziCommandLineUsesBridgeIdentity),
+    ("Yazi directory command preserves argument boundaries", YaziDirectoryCommandPreservesArgumentBoundaries),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
     ("shell target prefers selected paths", ShellTargetPrefersSelectedPaths),
     ("shell target preserves multiple selection", ShellTargetPreservesMultipleSelection),
@@ -76,6 +91,23 @@ static void PathLookupFindsExecutable()
     Assert(result.Equals(@"C:\tools\yazi.exe", StringComparison.OrdinalIgnoreCase));
 }
 
+static void PairedYaLookupPrefersYaziDirectory()
+{
+    var checkedPaths = new List<string>();
+    var result = YaziExecutableResolver.ResolvePairedYa(
+        @"C:\tools\yazi.exe",
+        @"C:\other",
+        path =>
+        {
+            checkedPaths.Add(path);
+            return path.Equals(@"C:\tools\ya.exe", StringComparison.OrdinalIgnoreCase)
+                || path.Equals(@"C:\other\ya.exe", StringComparison.OrdinalIgnoreCase);
+        });
+
+    Assert(result.Equals(@"C:\tools\ya.exe", StringComparison.OrdinalIgnoreCase));
+    Assert(checkedPaths.Count == 1);
+}
+
 static void MissingExecutableIsClassified()
 {
     try
@@ -86,6 +118,306 @@ static void MissingExecutableIsClassified()
     catch (YaziExecutableNotFoundException)
     {
         // Expected.
+    }
+}
+
+static void CommandLineOptionsPreserveNewWindowDefault()
+{
+    var options = CommandLineOptions.Parse([], @"C:\work");
+
+    Assert(!options.UseLastInstance);
+    Assert(options.InitialDirectory.Equals(@"C:\work", StringComparison.OrdinalIgnoreCase));
+
+    var positional = CommandLineOptions.Parse([@"C:\project"], @"C:\work");
+    Assert(!positional.UseLastInstance);
+    Assert(positional.InitialDirectory.Equals(@"C:\project", StringComparison.OrdinalIgnoreCase));
+}
+
+static void CommandLineOptionsSelectLastInstance()
+{
+    var options = CommandLineOptions.Parse(
+        [CommandLineOptions.LastInstanceOption, @"C:\日本語\project"],
+        @"C:\work");
+
+    Assert(options.UseLastInstance);
+    Assert(options.InitialDirectory.Equals(@"C:\日本語\project", StringComparison.OrdinalIgnoreCase));
+
+    var currentDirectory = CommandLineOptions.Parse(
+        [CommandLineOptions.LastInstanceOption],
+        @"C:\work");
+    Assert(currentDirectory.UseLastInstance);
+    Assert(currentDirectory.InitialDirectory.Equals(@"C:\work", StringComparison.OrdinalIgnoreCase));
+}
+
+static void LastInstanceProtocolValidatesControlFrames()
+{
+    var request = new LastInstanceControlRequest(@"C:\work\日本語 folder");
+    var frame = LastInstanceControlProtocol.Serialize(request);
+
+    Assert(LastInstanceControlProtocol.TryParse(frame, out var parsed));
+    Assert(parsed!.Path == request.Path);
+    Assert(!LastInstanceControlProtocol.TryParse(
+        frame.Replace(LastInstanceControlProtocol.SupportedProtocol, "wrong", StringComparison.Ordinal),
+        out _));
+    Assert(!LastInstanceControlProtocol.TryParse(
+        "{\"protocol\":\"" + LastInstanceControlProtocol.SupportedProtocol + "\",\"command\":\"shell\",\"path\":\"C:\\\\work\"}",
+        out _));
+    Assert(!LastInstanceControlProtocol.TryParse(
+        LastInstanceControlProtocol.Serialize(new LastInstanceControlRequest("relative")),
+        out _));
+    Assert(LastInstanceControlProtocol.IsAcceptedAcknowledgement(
+        LastInstanceControlProtocol.SerializeAcknowledgement(true)));
+    Assert(!LastInstanceControlProtocol.IsAcceptedAcknowledgement(
+        LastInstanceControlProtocol.SerializeAcknowledgement(false)));
+}
+
+static void LastInstanceFrameReaderRejectsOversizedFrames()
+{
+    var oversized = Encoding.UTF8.GetBytes(
+        new string('x', LastInstanceControlProtocol.MaxFrameBytes + 1) + "\n");
+
+    Expect<InvalidDataException>(() => LastInstanceFrame.ReadAsync(
+        new MemoryStream(oversized),
+        LastInstanceControlProtocol.MaxFrameBytes,
+        CancellationToken.None).GetAwaiter().GetResult());
+}
+
+static void LastInstanceRegistryPublishesAndRemovesCurrentEndpoint()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-last-instance-test-");
+    try
+    {
+        var metadataPath = Path.Combine(directory.FullName, "last.json");
+        var registry = new LastInstanceRegistry(metadataPath, $@"Local\yazi-test-{Guid.NewGuid():N}");
+        var currentPipe = $"yazi-terminal-control-{Guid.NewGuid():N}";
+        var newPipe = $"yazi-terminal-control-{Guid.NewGuid():N}";
+        var olderPipe = $"yazi-terminal-control-{Guid.NewGuid():N}";
+        registry.Publish(currentPipe);
+
+        Assert(registry.TryRead(out var endpoint));
+        Assert(endpoint!.PipeName == currentPipe);
+
+        Assert(registry.Publish(newPipe));
+        Assert(registry.TryRead(out endpoint));
+        Assert(endpoint!.PipeName == newPipe);
+
+        registry.RemoveIfCurrent(olderPipe);
+        Assert(registry.TryRead(out endpoint));
+        Assert(endpoint!.PipeName == newPipe);
+
+        registry.RemoveIfCurrent(currentPipe);
+        Assert(registry.TryRead(out endpoint));
+        Assert(endpoint!.PipeName == newPipe);
+
+        registry.RemoveIfCurrent(newPipe);
+        Assert(!registry.TryRead(out _));
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
+    }
+}
+
+static void LastInstanceRegistryHandlesMissingAndMalformedMetadata()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-last-instance-metadata-");
+    try
+    {
+        var metadataPath = Path.Combine(directory.FullName, "last.json");
+        var registry = new LastInstanceRegistry(metadataPath, $@"Local\yazi-test-{Guid.NewGuid():N}");
+        Assert(!registry.TryRead(out _));
+
+        File.WriteAllText(metadataPath, "not-json");
+        Assert(!registry.TryRead(out _));
+
+        File.WriteAllText(metadataPath, "{\"Protocol\":\"yazi-desktop-host/last-instance/1\",\"PipeName\":\"bad\"}");
+        Assert(!registry.TryRead(out _));
+
+        File.WriteAllText(metadataPath, new string('x', 4097));
+        Assert(!registry.TryRead(out _));
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
+    }
+}
+
+static void LastInstanceControlServerDisablesAfterPublicationFailure()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-last-instance-publish-");
+    var mutexName = $@"Local\yazi-test-{Guid.NewGuid():N}";
+    using var holderReady = new ManualResetEventSlim();
+    using var holderRelease = new ManualResetEventSlim();
+    var holder = Task.Run(() =>
+    {
+        using var heldMutex = new Mutex(false, mutexName);
+        if (!heldMutex.WaitOne(TimeSpan.FromSeconds(2)))
+        {
+            return;
+        }
+
+        holderReady.Set();
+        holderRelease.Wait();
+        heldMutex.ReleaseMutex();
+    });
+    try
+    {
+        Assert(holderReady.Wait(TimeSpan.FromSeconds(2)));
+        var registry = new LastInstanceRegistry(Path.Combine(directory.FullName, "last.json"), mutexName);
+        Assert(!registry.Publish("yazi-terminal-control-publish-failure"));
+
+        using var server = new LastInstanceControlServer(registry);
+        Assert(!server.Start());
+        Assert(!File.Exists(Path.Combine(directory.FullName, "last.json")));
+    }
+    finally
+    {
+        holderRelease.Set();
+        holder.GetAwaiter().GetResult();
+        directory.Delete(recursive: true);
+    }
+}
+
+static void LastInstanceClientFallsBackForUnreachableEndpoint()
+{
+    var endpoint = new LastInstanceEndpoint($"yazi-terminal-control-{Guid.NewGuid():N}");
+
+    Assert(!LastInstanceClient.TrySend(endpoint, @"C:\work", TimeSpan.FromMilliseconds(100)));
+}
+
+static void LastInstanceClientRejectsInvalidEndpointNames()
+{
+    var invalidNames = new string?[]
+    {
+        null,
+        string.Empty,
+        "yazi-terminal-control-",
+        "yazi-terminal-control-not-a-guid",
+        "yazi-terminal-control-gggggggggggggggggggggggggggggggg",
+        "other-control-" + Guid.NewGuid().ToString("N"),
+        "yazi-terminal-control-" + Guid.NewGuid().ToString("N") + "-extra",
+    };
+
+    foreach (var name in invalidNames)
+    {
+        Assert(!LastInstanceClient.TrySendAsync(
+            new LastInstanceEndpoint(name!),
+            @"C:\work",
+            TimeSpan.FromSeconds(1)).GetAwaiter().GetResult());
+    }
+}
+
+static void LastInstanceClientTimesOutWhileWaitingForAcknowledgement()
+{
+    var pipeName = $"yazi-terminal-control-{Guid.NewGuid():N}";
+    using var server = new NamedPipeServerStream(
+        pipeName,
+        PipeDirection.InOut,
+        1,
+        PipeTransmissionMode.Byte,
+        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+    var acceptTask = server.WaitForConnectionAsync();
+    var resultTask = Task.Run(() => LastInstanceClient.TrySend(
+        new LastInstanceEndpoint(pipeName),
+        @"C:\work",
+        TimeSpan.FromMilliseconds(200)));
+
+    Assert(acceptTask.Wait(TimeSpan.FromSeconds(2)));
+    Assert(!resultTask.GetAwaiter().GetResult());
+}
+
+static void LastInstanceClientRejectsInvalidAcknowledgementFrame()
+{
+    var acknowledgements = new[]
+    {
+        Encoding.UTF8.GetBytes("{malformed}\n"),
+        Enumerable.Repeat((byte)'x', LastInstanceControlProtocol.MaxFrameBytes + 1)
+            .Append((byte)'\n')
+            .ToArray(),
+        new byte[] { 0xFF, (byte)'\n' },
+    };
+
+    foreach (var acknowledgement in acknowledgements)
+    {
+        var pipeName = $"yazi-terminal-control-{Guid.NewGuid():N}";
+        using var server = new NamedPipeServerStream(
+            pipeName,
+            PipeDirection.InOut,
+            1,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+        var acceptTask = server.WaitForConnectionAsync();
+        var resultTask = Task.Run(() => LastInstanceClient.TrySend(
+            new LastInstanceEndpoint(pipeName),
+            @"C:\work",
+            TimeSpan.FromSeconds(2)));
+
+        Assert(acceptTask.Wait(TimeSpan.FromSeconds(2)));
+        try
+        {
+            server.Write(acknowledgement, 0, acknowledgement.Length);
+            server.Flush();
+        }
+        catch (IOException)
+        {
+            // The client may close after rejecting the frame.
+        }
+
+        Assert(!resultTask.GetAwaiter().GetResult());
+    }
+}
+
+static void LastInstanceControlPipeAcceptsDirectoryRequest()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-last-instance-pipe-");
+    try
+    {
+        var registry = new LastInstanceRegistry(
+            Path.Combine(directory.FullName, "last.json"),
+            $@"Local\yazi-test-{Guid.NewGuid():N}");
+        using var server = new LastInstanceControlServer(registry);
+        var received = new ManualResetEventSlim();
+        string? receivedPath = null;
+        server.DirectoryRequested += (path, _) =>
+        {
+            receivedPath = path;
+            received.Set();
+            return Task.FromResult(true);
+        };
+        server.Start();
+
+        Assert(registry.TryRead(out var endpoint));
+        Assert(LastInstanceClient.TrySend(
+            endpoint!,
+            @"C:\work\space\日本語",
+            TimeSpan.FromSeconds(2)));
+        Assert(received.Wait(TimeSpan.FromSeconds(2)));
+        Assert(receivedPath == @"C:\work\space\日本語");
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
+    }
+}
+
+static void LastInstanceControlPipeReturnsNegativeAcknowledgement()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-last-instance-negative-");
+    try
+    {
+        var registry = new LastInstanceRegistry(
+            Path.Combine(directory.FullName, "last.json"),
+            $@"Local\yazi-test-{Guid.NewGuid():N}");
+        using var server = new LastInstanceControlServer(registry);
+        server.DirectoryRequested += (_, _) => Task.FromResult(false);
+        server.Start();
+
+        Assert(registry.TryRead(out var endpoint));
+        Assert(!LastInstanceClient.TrySend(endpoint!, @"C:\work", TimeSpan.FromSeconds(2)));
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
     }
 }
 
@@ -305,6 +637,21 @@ static void YaziCommandLineUsesBridgeIdentity()
     var commandLine = YaziProcessLaunchConfiguration.CreateCommandLine(@"C:\tools\yazi.exe");
     var clientId = commandLine.Split("--client-id ", StringSplitOptions.None).Last();
     Assert(long.TryParse(clientId, out var numericClientId) && numericClientId > 0);
+}
+
+static void YaziDirectoryCommandPreservesArgumentBoundaries()
+{
+    var startInfo = YaziDirectoryController.CreateStartInfo(
+        @"C:\tools\ya.exe",
+        "12345",
+        @"C:\資料\space folder");
+
+    Assert(!startInfo.UseShellExecute);
+    Assert(startInfo.ArgumentList.SequenceEqual([
+        "emit-to",
+        "12345",
+        "cd",
+        @"C:\資料\space folder"]));
 }
 
 static void BridgeEnvironmentScopeRestoresValues()

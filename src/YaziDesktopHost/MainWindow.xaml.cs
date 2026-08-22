@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.IO;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -10,6 +11,8 @@ namespace YaziDesktopHost;
 
 public partial class MainWindow : Window
 {
+    private readonly string _initialDirectory;
+    private readonly LastInstanceControlServer _lastInstanceServer;
     private EasyTerminalControl? _terminal;
     private TermPTY? _term;
     private YaziBridgePipeServer? _bridgeServer;
@@ -25,6 +28,10 @@ public partial class MainWindow : Window
     private TerminalWindowSubclass? _terminalWindowSubclass;
     private bool _isClosing;
     private AppThemeMode _themeMode = AppThemeMode.Dark;
+    private string? _yaziClientId;
+    private string? _yaExecutable;
+    private bool _yaziReady;
+    private readonly SemaphoreSlim _directoryRequestGate = new(1, 1);
 
     private const int WmContextMenu = 0x007B;
     private const int WmRButtonDown = 0x0204;
@@ -36,8 +43,20 @@ public partial class MainWindow : Window
     private const int VkControl = 0x11;
 
     public MainWindow()
+        : this(Environment.CurrentDirectory)
     {
+    }
+
+    public MainWindow(string initialDirectory)
+    {
+        _initialDirectory = Path.GetFullPath(initialDirectory);
+        _lastInstanceServer = new LastInstanceControlServer();
+        _lastInstanceServer.DirectoryRequested += LastInstanceServer_DirectoryRequestedAsync;
         InitializeComponent();
+        if (!_lastInstanceServer.Start())
+        {
+            AppLogger.Log("last_instance_control_unavailable");
+        }
         ApplyTheme(_themeMode);
     }
 
@@ -76,6 +95,17 @@ public partial class MainWindow : Window
         try
         {
             var executable = YaziExecutableResolver.Resolve();
+            var launch = YaziProcessLaunchConfiguration.Create(executable);
+            _yaziClientId = launch.ClientId;
+            try
+            {
+                _yaExecutable = YaziExecutableResolver.ResolvePairedYa(executable);
+            }
+            catch (YaziExecutableNotFoundException)
+            {
+                AppLogger.Log("ya_executable_unavailable");
+            }
+
             var instanceId = Guid.NewGuid();
             _bridgeServer = new YaziBridgePipeServer(instanceId);
             _bridgeSession = new YaziBridgeSession(instanceId, _bridgeServer);
@@ -88,8 +118,8 @@ public partial class MainWindow : Window
             _term = new TermPTY();
             _terminal = new EasyTerminalControl
             {
-                StartupCommandLine = YaziProcessLaunchConfiguration.CreateCommandLine(executable),
-                WorkingDirectory = Environment.CurrentDirectory,
+                StartupCommandLine = launch.CommandLine,
+                WorkingDirectory = _initialDirectory,
                 ConPTYTerm = _term,
                 Theme = CreateTerminalTheme(ThemePalette.For(_themeMode)),
                 FontFamilyWhenSettingTheme = new FontFamily("MS Gothic"),
@@ -126,6 +156,111 @@ public partial class MainWindow : Window
         DisposeSession();
     }
 
+    private async Task<bool> LastInstanceServer_DirectoryRequestedAsync(
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        if (_isClosing || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            return false;
+        }
+
+        try
+        {
+            var operation = Dispatcher.InvokeAsync(
+                () => HandleLastInstanceDirectoryAsync(directory, cancellationToken),
+                DispatcherPriority.Input,
+                cancellationToken);
+            var handlerTask = await operation.Task.ConfigureAwait(false);
+            return await handlerTask.ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> HandleLastInstanceDirectoryAsync(
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _directoryRequestGate.WaitAsync(cancellationToken).ConfigureAwait(true);
+            try
+            {
+                if (_isClosing || !_yaziReady || _yaziClientId is null || _yaExecutable is null)
+                {
+                    AppLogger.Log("last_instance_directory_unavailable");
+                    return false;
+                }
+
+                ActivateForDirectoryRequest();
+                return await ChangeDirectoryAsync(directory, cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                _directoryRequestGate.Release();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> ChangeDirectoryAsync(
+        string directory,
+        CancellationToken cancellationToken)
+    {
+        if (_yaziClientId is null || _yaExecutable is null)
+        {
+            AppLogger.Log("last_instance_directory_unavailable");
+            return false;
+        }
+
+        try
+        {
+            var succeeded = await YaziDirectoryController.ChangeDirectoryAsync(
+                _yaExecutable,
+                _yaziClientId,
+                directory,
+                cancellationToken).ConfigureAwait(false);
+            if (!succeeded && !_isClosing)
+            {
+                AppLogger.Log("last_instance_directory_failed");
+            }
+
+            return succeeded;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+        {
+            AppLogger.Log("last_instance_directory_failed", exception);
+            return false;
+        }
+    }
+
+    private void ActivateForDirectoryRequest()
+    {
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        Activate();
+        var handle = new WindowInteropHelper(this).Handle;
+        if (handle != IntPtr.Zero)
+        {
+            SetForegroundWindow(handle);
+        }
+
+        _terminal?.Focus();
+    }
+
     private void DisposeSession()
     {
         if (_term is not null)
@@ -151,6 +286,8 @@ public partial class MainWindow : Window
         _bridgeEnvironment?.Dispose();
         _bridgeEnvironment = null;
         DisposeBridge();
+        _lastInstanceServer.DirectoryRequested -= LastInstanceServer_DirectoryRequestedAsync;
+        _lastInstanceServer.Dispose();
     }
 
     private void AttachTerminalMessageHook()
@@ -426,6 +563,8 @@ public partial class MainWindow : Window
 
     private void Term_TermReady(object? sender, EventArgs e)
     {
+        _yaziReady = true;
+
         if (_processMonitorTask is not null || sender is not TermPTY term)
         {
             return;
@@ -665,6 +804,10 @@ public partial class MainWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
     [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
     private static extern bool ClientToScreen(IntPtr hwnd, ref CursorPoint point);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr hwnd);
 
     private struct CursorPoint
     {

@@ -45,6 +45,25 @@ Run the host with the .NET 10 SDK from the repository root:
 dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
 ```
 
+The normal executable invocation creates a new window. Pass a directory to set
+the initial Yazi directory. To reuse the most recently launched Yazi Terminal
+window, use `--last-instance`:
+
+```powershell
+YaziTerminal.exe C:\work\project
+YaziTerminal.exe --last-instance C:\work\other-project
+```
+
+If the last instance is not available, `--last-instance` starts a new window
+with the requested directory.
+
+From Git Bash, quote the executable and directory when either path contains
+spaces:
+
+```bash
+"/c/Tools/Yazi Terminal/YaziTerminal.exe" --last-instance "C:/work/other-project"
+```
+
 Set `YAZI_PATH` when `yazi.exe` is not available through `PATH`. Later Shell
 integration phases must not be implemented by parsing terminal screen text.
 
