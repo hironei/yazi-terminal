@@ -5,7 +5,7 @@
 This is the Phase 1 design for the initial empty repository. It intentionally
 does not design the Shell integration or the Phase 2 bridge protocol in detail;
 those depend on the unresolved requirements findings recorded in
-`docs/requirements-yazi-windows-gui-frontend.md`.
+`requirements-yazi-windows-gui-frontend.md`.
 
 ## Composition root
 

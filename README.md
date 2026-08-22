@@ -5,23 +5,13 @@ Windows WPF host for the ordinary Yazi terminal file manager.
 implementation. It hosts the Windows Terminal renderer and ConPTY through a
 native terminal control; production packaging gates remain open.
 
-The reviewed scope and known blockers are documented in:
+Start with the [user manual](docs/user-manual.md) for the supported environment,
+setup, validated capabilities, limitations, and license.
 
-- [Phase 1 requirements](docs/requirements-yazi-windows-gui-frontend.md)
-- [Phase 1 design](docs/design-yazi-windows-gui-frontend.md)
-- [Terminal host candidate evaluation](docs/terminal-host-evaluation.md)
-- [Compatibility matrix and distribution gates](docs/compatibility-matrix.md)
-- [Phase 2 bridge requirements](docs/requirements-phase2-yazi-bridge.md)
-- [Phase 2 bridge design](docs/design-phase2-yazi-bridge.md)
-- [Phase 2 Yazi event investigation](docs/phase2-yazi-event-investigation.md)
-- [Phase 2 plugin probe](plugins/yazi-desktop-host.yazi/README.md)
-- [Phase 3 Shell context-menu requirements](docs/requirements-phase3-shell-context-menu.md)
-- [Phase 3 Shell context-menu design](docs/design-phase3-shell-context-menu.md)
-- [Phase 4 drag-and-drop requirements](docs/requirements-phase4-drag-drop.md)
-- [Phase 4 drag-and-drop design](docs/design-phase4-drag-drop.md)
-- [Phase 5 Explorer-to-Yazi drop requirements](docs/requirements-phase5-explorer-to-yazi-drop.md)
-- [Phase 5 Explorer-to-Yazi drop design](docs/design-phase5-explorer-to-yazi-drop.md)
-- [User manual](docs/user-manual.md)
+Detailed Phase requirements, designs, and investigation notes are kept in the
+[development history archive](docs/history/). These documents describe the
+implementation process and compatibility evidence rather than the normal user
+workflow.
 
 Run the host with the .NET 10 SDK from the repository root:
 
@@ -43,5 +33,5 @@ The application also uses third-party components, including
 [`EasyWindowsTerminalControl`](https://github.com/mitchcapper/EasyWindowsTerminalControl),
 the Microsoft Windows Terminal WPF control, and ConPTY packages. Their terms
 and required notices are separate from this project's license. See the
-[compatibility matrix](docs/compatibility-matrix.md) for the current dependency
-and distribution notes.
+[user manual](docs/user-manual.md) for the current dependency and distribution
+notes.

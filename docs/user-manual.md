@@ -4,6 +4,18 @@ Yazi Desktop Host is a Windows WPF host for the ordinary Yazi terminal file
 manager. It embeds a Windows Terminal-based control, so Yazi runs in the host
 window instead of opening a separate terminal window.
 
+## At a glance
+
+- The current terminal backend is `EasyWindowsTerminalControl` 1.0.38.
+- CJK display, keyboard input, Japanese IME conversion, mouse reporting,
+  resize, alternate-screen rendering, and 24-bit color passed the current
+  Windows/Yazi validation.
+- Explorer/Desktop drag-and-drop is supported in the validated directions;
+  Yazi and Windows Shell remain responsible for file-operation semantics.
+- The product target is Windows x64. The validated Yazi/`ya` fixture is 26.5.6.
+- Detailed requirements, designs, and investigation notes are archived in the
+  [development history](history/).
+
 ## Requirements
 
 - Windows x64
@@ -12,8 +24,8 @@ window instead of opening a separate terminal window.
 - `yazi.exe` and its paired `ya.exe`
 
 The current compatibility boundary is the exact Windows, Yazi, and `ya` fixture
-recorded in the [compatibility matrix](compatibility-matrix.md). x86 and ARM64
-are not product targets.
+recorded in the archived compatibility evidence. x86 and ARM64 are not product
+targets.
 
 ## Start the host
 
@@ -47,8 +59,8 @@ The embedded terminal supports the normal Yazi interaction path, including:
 - alternate-screen rendering and 24-bit color
 
 The host also supports Explorer/Desktop drag-and-drop in the validated
-directions documented in the [Phase 5 requirements](requirements-phase5-explorer-to-yazi-drop.md)
-and [compatibility matrix](compatibility-matrix.md).
+directions. Ctrl/Shift Copy/Move behavior follows the Windows Shell effect
+negotiation.
 
 ## Diagnostics
 
@@ -72,9 +84,8 @@ The fixture is for manual validation and is not part of normal Yazi display.
 - The exact supported Yazi/`ya` version policy is not yet a compatibility range;
   use the pinned fixture until that policy is defined.
 
-See the [terminal host evaluation](terminal-host-evaluation.md) and
-[compatibility matrix](compatibility-matrix.md) for the evidence and remaining
-distribution gates.
+The detailed evidence and remaining distribution gates are available in the
+[development history archive](history/).
 
 ## License
 
@@ -85,4 +96,4 @@ Third-party dependencies are distributed under their own terms. In particular,
 `CI.Microsoft.Terminal.Wpf`. The v1 design permits that dependency with a
 recorded supply-chain and maintenance risk; binary distributions must include
 the applicable Microsoft Terminal `LICENSE` and `NOTICE` handling after it has
-been confirmed. See the [dependency decision in the design document](design-yazi-windows-gui-frontend.md#dependency-licensing-and-supply-chain-decision).
+been confirmed. See the [dependency decision in the design document](history/design-yazi-windows-gui-frontend.md#dependency-licensing-and-supply-chain-decision).

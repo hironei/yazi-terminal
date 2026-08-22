@@ -209,5 +209,5 @@ The requirements phase is not fully closed: the supported Windows versions,
 CPU architectures, exact Yazi/`ya` compatibility range, and production
 packaging/native-overlay gates still need an explicit compatibility matrix.
 The current fixture and its limits are recorded in
-`docs/compatibility-matrix.md`. These are release-readiness work, not reasons
+`compatibility-matrix.md`. These are release-readiness work, not reasons
 to add another terminal or input interception implementation now.
