@@ -19,41 +19,24 @@ Yazi plugin compatibility.
   Yazi and Windows Shell remain responsible for file-operation semantics.
 - The product target is Windows x64. The validated Yazi/`ya` fixture is 26.5.6.
 
-## Requirements
+## User installation
+
+### Requirements
 
 - Windows x64
-- .NET 10 SDK for running from source, or the Windows Desktop runtime for a
-  framework-dependent published build
+- .NET 10 Windows Desktop runtime for the framework-dependent release archive
 - `yazi.exe` and its paired `ya.exe`
 
 The current compatibility boundary is the exact Windows, Yazi, and `ya` fixture
 recorded in the archived compatibility evidence. x86 and ARM64 are not product
 targets.
 
-## Start the host
-
-For a packaged Windows x64 build, download the latest archive from the
+Download the latest Windows x64 archive from the
 [GitHub Releases](https://github.com/hironei/yazi-terminal/releases), extract
-it, and start `YaziTerminal.exe`. The framework-dependent release requires the
-.NET 10 Windows Desktop runtime.
+it, and start `YaziTerminal.exe`.
 
-From the repository root, run:
-
-```powershell
-dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
-```
-
-The host resolves `yazi.exe` from `PATH`. To use a specific executable, set
-`YAZI_PATH`:
-
-```powershell
-$env:YAZI_PATH = 'C:\Tools\yazi\yazi.exe'
-dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
-```
-
-The host starts Yazi in the host process working directory for the current
-implementation. Yazi remains responsible for file-manager state and file
-operation semantics.
+The archive contains the executable, its native terminal dependencies, this
+manual, the MIT `LICENSE`, and the optional bridge plugin.
 
 ## Plugin installation
 
@@ -62,7 +45,29 @@ directory, hovered item, and selection to Yazi Terminal. It is required for the
 host's bridge-backed Shell targeting and Explorer drag-and-drop behavior.
 The current validated fixture is Yazi/`ya` 26.5.6.
 
-The plugin is included in the repository under
+Use one of the following installation methods.
+
+### Install with Yazi's package manager
+
+Yazi's package manager command is `ya pkg add`. From PowerShell or another
+shell, run:
+
+```powershell
+ya pkg add hironei/yazi-terminal:yazi-desktop-host
+```
+
+This downloads the `yazi-desktop-host.yazi` package from the repository and
+records it in Yazi's `package.toml`. On another machine, install the locked
+dependencies with `ya pkg install`; to update the package, use `ya pkg upgrade`.
+To remove it later, run:
+
+```powershell
+ya pkg delete hironei/yazi-terminal:yazi-desktop-host
+```
+
+### Manual installation from the repository
+
+The plugin is also included in the release archive and repository under
 `plugins/yazi-desktop-host.yazi`. From the repository root, copy it into the
 current user's Yazi plugin directory:
 
@@ -83,13 +88,45 @@ require("yazi-desktop-host"):setup {}
 Restart Yazi Terminal after changing the plugin configuration. The host supplies
 the pipe and instance identifiers to the Yazi child automatically.
 
-To update the plugin, copy the repository directory again. To uninstall it,
-remove the `require("yazi-desktop-host"):setup {}` line from `init.lua` and
-delete `%APPDATA%\yazi\config\plugins\yazi-desktop-host.yazi`.
+For a manual installation, update the plugin by copying the repository
+directory again. To uninstall it, remove the
+`require("yazi-desktop-host"):setup {}` line from `init.lua` and delete
+`%APPDATA%\yazi\config\plugins\yazi-desktop-host.yazi`.
 
 The plugin currently uses the legacy `yazi-desktop-host` name and bridge
 protocol intentionally; this preserves compatibility with the host and existing
 Yazi configuration while the public product name is Yazi Terminal.
+
+## Developer setup
+
+The following section is for contributors building Yazi Terminal from source.
+Users installing a release archive can skip it.
+
+Install the .NET 10 SDK, then run these commands from the repository root:
+
+```powershell
+dotnet restore YaziDesktopHost.slnx
+dotnet build YaziDesktopHost.slnx --no-restore
+dotnet run --project tests/YaziDesktopHost.Tests/YaziDesktopHost.Tests.csproj --no-build --no-restore
+```
+
+To run the host from source:
+
+```powershell
+dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
+```
+
+The host resolves `yazi.exe` from `PATH`. To use a specific executable, set
+`YAZI_PATH` before starting it:
+
+```powershell
+$env:YAZI_PATH = 'C:\Tools\yazi\yazi.exe'
+dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
+```
+
+The host starts Yazi in the host process working directory for the current
+implementation. Yazi remains responsible for file-manager state and file
+operation semantics.
 
 ## Terminal operation
 

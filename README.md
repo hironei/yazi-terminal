@@ -9,25 +9,47 @@ native terminal control; production packaging gates remain open.
 Start with the [user manual](docs/user-manual.md) for the supported environment,
 setup, validated capabilities, limitations, and license.
 
+## User installation
+
+1. Download the latest Windows x64 archive from the
+   [GitHub Releases](https://github.com/hironei/yazi-terminal/releases) page.
+2. Install the .NET 10 Windows Desktop runtime if it is not already installed.
+3. Extract the archive and start `YaziTerminal.exe`.
+4. Install the optional Yazi bridge plugin using the
+   [plugin installation guide](docs/user-manual.md#plugin-installation).
+
+The archive contains `YaziTerminal.exe`, the required native terminal files,
+the MIT `LICENSE`, this documentation, and the Yazi bridge plugin.
+
+## Developer setup
+
+The following commands are for building and testing from source. They are not
+required for users installing a published release.
+
+Restore and build the solution:
+
+```powershell
+dotnet restore YaziDesktopHost.slnx
+dotnet build YaziDesktopHost.slnx --no-restore
+```
+
+Run the executable test suite:
+
+```powershell
+dotnet run --project tests/YaziDesktopHost.Tests/YaziDesktopHost.Tests.csproj --no-build --no-restore
+```
+
 Run the host with the .NET 10 SDK from the repository root:
 
 ```powershell
 dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
 ```
 
-For a packaged Windows x64 build, download the latest archive from the
-[GitHub Releases](https://github.com/hironei/yazi-terminal/releases) page.
-The release archive includes `YaziTerminal.exe`, the required native terminal
-files, this documentation, and the Yazi bridge plugin.
-
 Set `YAZI_PATH` when `yazi.exe` is not available through `PATH`. Later Shell
 integration phases must not be implemented by parsing terminal screen text.
 
 For an opt-in terminal color diagnostic, set `YAZI_DESKTOP_HOST_VT_FIXTURE=1`
 before launching. The fixture is intended for manual validation only.
-
-For bridge-backed Shell integration, follow the
-[Yazi plugin installation guide](docs/user-manual.md#plugin-installation).
 
 ## License
 
