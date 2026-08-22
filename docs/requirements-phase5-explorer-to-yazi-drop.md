@@ -31,6 +31,8 @@ the Shell remain authoritative for state and file-operation semantics.
 ## Non-goals
 
 - Dropping on a particular Yazi pane or hovered item; v1 targets `cwd`.
+- Changing `cwd` with ordinary Yazi navigation keys while an Explorer drag is
+  active; the OLE drag loop owns ordinary keyboard input during the drag.
 - A custom file-operation engine, overwrite policy, progress UI, or refresh
   protocol owned by the host.
 - Claiming support for third-party Shell extensions, cloud placeholders, or
@@ -54,3 +56,17 @@ the Shell remain authoritative for state and file-operation semantics.
 - The native HWND and WPF airspace boundary require real Explorer interaction.
 - Shell extension behavior, elevation prompts, virtual files, and cloud
   providers are compatibility observations, not headless guarantees.
+
+## Manual validation result
+
+The 2026-08-22 Windows run confirmed the required direction and modifier
+behavior:
+
+- Explorer file/folder → Yazi: PASS
+- Ctrl/Shift Copy/Move negotiation: PASS
+- Yazi → Explorer/Desktop: PASS
+- Keyboard navigation that changes `cwd` during an active Explorer drag: not
+  required; the drag loop does not deliver ordinary keys to Yazi.
+
+The last item is accepted as a v1 non-goal. No system-wide keyboard hook or
+other input interception is used to work around the OLE drag-loop boundary.
