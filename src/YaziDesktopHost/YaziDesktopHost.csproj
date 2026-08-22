@@ -8,6 +8,8 @@
     <UseWPF>true</UseWPF>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <Product>Yazi Terminal</Product>
+    <Description>Windows WPF host for the Yazi terminal file manager.</Description>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,8 +1,13 @@
-# Yazi Desktop Host User Manual
+# Yazi Terminal User Manual
 
-Yazi Desktop Host is a Windows WPF host for the ordinary Yazi terminal file
+Yazi Terminal is a Windows WPF host for the ordinary Yazi terminal file
 manager. It embeds a Windows Terminal-based control, so Yazi runs in the host
 window instead of opening a separate terminal window.
+
+The public repository name is `yazi-terminal`. Internal source paths,
+namespaces, and bridge identifiers still use the legacy `YaziDesktopHost` /
+`yazi-desktop-host` names where changing them would break existing build or
+Yazi plugin compatibility.
 
 ## At a glance
 
@@ -13,8 +18,6 @@ window instead of opening a separate terminal window.
 - Explorer/Desktop drag-and-drop is supported in the validated directions;
   Yazi and Windows Shell remain responsible for file-operation semantics.
 - The product target is Windows x64. The validated Yazi/`ya` fixture is 26.5.6.
-- Detailed requirements, designs, and investigation notes are archived in the
-  [development history](history/).
 
 ## Requirements
 
@@ -84,12 +87,9 @@ The fixture is for manual validation and is not part of normal Yazi display.
 - The exact supported Yazi/`ya` version policy is not yet a compatibility range;
   use the pinned fixture until that policy is defined.
 
-The detailed evidence and remaining distribution gates are available in the
-[development history archive](history/).
-
 ## License
 
-Yazi Desktop Host is released under the [MIT License](../LICENSE).
+Yazi Terminal is released under the [MIT License](../LICENSE).
 
 Third-party dependencies are distributed under their own terms. In particular,
 `EasyWindowsTerminalControl` uses the third-party NuGet package

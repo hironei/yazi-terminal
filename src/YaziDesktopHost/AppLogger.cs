@@ -12,7 +12,7 @@ internal static class AppLogger
         {
             var logDirectory = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "YaziDesktopHost");
+                "YaziTerminal");
             Directory.CreateDirectory(logDirectory);
 
             var line = $"{DateTimeOffset.Now:O} {eventName}";

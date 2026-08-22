@@ -1,17 +1,13 @@
-# Yazi Desktop Host
+# Yazi Terminal
 
-Windows WPF host for the ordinary Yazi terminal file manager.
+Windows WPF host for the ordinary Yazi terminal file manager. The project is
+published as **Yazi Terminal** under the `yazi-terminal` repository name.
 `EasyWindowsTerminalControl` 1.0.38 is the selected backend for the current
 implementation. It hosts the Windows Terminal renderer and ConPTY through a
 native terminal control; production packaging gates remain open.
 
 Start with the [user manual](docs/user-manual.md) for the supported environment,
 setup, validated capabilities, limitations, and license.
-
-Detailed Phase requirements, designs, and investigation notes are kept in the
-[development history archive](docs/history/). These documents describe the
-implementation process and compatibility evidence rather than the normal user
-workflow.
 
 Run the host with the .NET 10 SDK from the repository root:
 
@@ -27,7 +23,7 @@ before launching. The fixture is intended for manual validation only.
 
 ## License
 
-Yazi Desktop Host is released under the [MIT License](LICENSE).
+Yazi Terminal is released under the [MIT License](LICENSE).
 
 The application also uses third-party components, including
 [`EasyWindowsTerminalControl`](https://github.com/mitchcapper/EasyWindowsTerminalControl),

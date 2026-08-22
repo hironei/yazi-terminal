@@ -344,7 +344,7 @@ public partial class MainWindow : Window
         MessageBox.Show(
             this,
             "Yazi stopped unexpectedly. See the application log for details.",
-            "Yazi Desktop Host",
+            "Yazi Terminal",
             MessageBoxButton.OK,
             MessageBoxImage.Error);
         DisposeSession();
@@ -391,7 +391,7 @@ public partial class MainWindow : Window
     private void ShowStartupError(string message)
     {
         AppLogger.Log("yazi_start_unavailable");
-        MessageBox.Show(this, message, "Yazi Desktop Host", MessageBoxButton.OK, MessageBoxImage.Error);
+        MessageBox.Show(this, message, "Yazi Terminal", MessageBoxButton.OK, MessageBoxImage.Error);
         Close();
     }
 
