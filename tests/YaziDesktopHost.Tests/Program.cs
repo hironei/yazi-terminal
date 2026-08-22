@@ -17,6 +17,11 @@ var tests = new (string Name, Action Test)[]
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("Yazi command line uses bridge identity", YaziCommandLineUsesBridgeIdentity),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
+    ("shell target prefers selected paths", ShellTargetPrefersSelectedPaths),
+    ("shell target preserves multiple selection", ShellTargetPreservesMultipleSelection),
+    ("shell target falls back to hovered path", ShellTargetFallsBackToHoveredPath),
+    ("shell target resolves current directory", ShellTargetResolvesCurrentDirectory),
+    ("shell target rejects unavailable, URLs, and empty state", ShellTargetRejectsUnavailableUrlsAndEmptyState),
 };
 
 var failures = new List<string>();
@@ -338,6 +343,86 @@ static void BridgeEnvironmentScopeRestoresValues()
         }
     }
 }
+
+static void ShellTargetPrefersSelectedPaths()
+{
+    var state = AvailableState(
+        hovered: new YaziBridgePath(YaziBridgePathKind.Filesystem, @"C:\work\hovered.txt"),
+        selected: [new(YaziBridgePathKind.Filesystem, @"C:\work\selected.txt")]);
+
+    var result = YaziShellTargetResolver.Resolve(state, YaziShellInvocation.SelectedOrHovered);
+
+    Assert(result.Status == YaziShellTargetStatus.Available);
+    Assert(result.Target!.Paths.SequenceEqual([@"C:\work\selected.txt"]));
+}
+
+static void ShellTargetFallsBackToHoveredPath()
+{
+    var state = AvailableState(
+        hovered: new YaziBridgePath(YaziBridgePathKind.Filesystem, @"C:\資料\日本語.txt"),
+        selected: []);
+
+    var result = YaziShellTargetResolver.Resolve(state, YaziShellInvocation.SelectedOrHovered);
+
+    Assert(result.Status == YaziShellTargetStatus.Available);
+    Assert(result.Target!.Paths.SequenceEqual([@"C:\資料\日本語.txt"]));
+}
+
+static void ShellTargetPreservesMultipleSelection()
+{
+    var selected = new YaziBridgePath[]
+    {
+        new(YaziBridgePathKind.Filesystem, @"C:\work\first.txt"),
+        new(YaziBridgePathKind.Filesystem, @"C:\work\second.txt"),
+    };
+    var state = AvailableState(
+        hovered: new YaziBridgePath(YaziBridgePathKind.Filesystem, @"C:\work\hovered.txt"),
+        selected);
+
+    var result = YaziShellTargetResolver.Resolve(state, YaziShellInvocation.SelectedOrHovered);
+
+    Assert(result.Status == YaziShellTargetStatus.Available);
+    Assert(result.Target!.Paths.SequenceEqual(selected.Select(path => path.Value)));
+}
+
+static void ShellTargetResolvesCurrentDirectory()
+{
+    var state = AvailableState(
+        hovered: new YaziBridgePath(YaziBridgePathKind.Filesystem, @"C:\work\hovered.txt"),
+        selected: [new(YaziBridgePathKind.Filesystem, @"C:\work\selected.txt")]);
+
+    var result = YaziShellTargetResolver.Resolve(state, YaziShellInvocation.CurrentDirectory);
+
+    Assert(result.Status == YaziShellTargetStatus.Available);
+    Assert(result.Target!.Paths.SequenceEqual([@"C:\work"]));
+}
+
+static void ShellTargetRejectsUnavailableUrlsAndEmptyState()
+{
+    var unavailable = YaziShellTargetResolver.Resolve(null, YaziShellInvocation.CurrentDirectory);
+    Assert(unavailable.Status == YaziShellTargetStatus.Unavailable);
+
+    var state = AvailableState(
+        hovered: new YaziBridgePath(YaziBridgePathKind.Url, "archive://remote/item"),
+        selected: []);
+    var unsupported = YaziShellTargetResolver.Resolve(state, YaziShellInvocation.SelectedOrHovered);
+    Assert(unsupported.Status == YaziShellTargetStatus.Unsupported);
+
+    var empty = YaziShellTargetResolver.Resolve(
+        AvailableState(hovered: null, selected: []),
+        YaziShellInvocation.SelectedOrHovered);
+    Assert(empty.Status == YaziShellTargetStatus.Empty);
+}
+
+static YaziBridgeState AvailableState(YaziBridgePath? hovered, IReadOnlyList<YaziBridgePath> selected) =>
+    new(
+        Guid.NewGuid(),
+        5,
+        0,
+        new YaziBridgePath(YaziBridgePathKind.Filesystem, @"C:\work"),
+        hovered,
+        selected,
+        YaziBridgeAvailability.Available);
 
 static byte[] SnapshotFrame(Guid instanceId, ulong sequence) => Frame(
     instanceId,

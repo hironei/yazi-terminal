@@ -2,16 +2,18 @@
 
 ## Decision status
 
-`EasyWindowsTerminalControl` 1.0.38 is now the first implementation candidate
-for the next compatibility run. It is not adopted as the production terminal
-backend yet. The package wraps the Microsoft Windows Terminal WPF control and
+`EasyWindowsTerminalControl` 1.0.38 is the selected terminal backend for the
+current host implementation. The manual compatibility matrix passed, including
+CJK, keyboard, mouse, resize, and IME. Production distribution remains subject
+to the package, native-asset, and overlay gates below. The package wraps the
+Microsoft Windows Terminal WPF control and
 ConPTY, while keeping the terminal boundary replaceable without introducing
 screen parsing. The earlier `VirtualTerminal.WPF` /
 `VirtualTerminal.CommandLine` 1.8.1 run remains the baseline comparison.
 
-The Easy candidate is intentionally provisional. Its published package still
-depends on beta/low-level Windows Terminal components, and the native terminal
-HWND introduces WPF airspace constraints. See the [NuGet package page](https://www.nuget.org/packages/easywindowsterminalcontrol/)
+The Easy selection remains provisional for production distribution. Its
+published package still depends on beta/low-level Windows Terminal components,
+and the native terminal HWND introduces WPF airspace constraints. See the [NuGet package page](https://www.nuget.org/packages/easywindowsterminalcontrol/)
 and the [upstream project](https://github.com/mitchcapper/EasyWindowsTerminalControl).
 
 ## Alternative comparison
@@ -34,10 +36,9 @@ and [project file](https://github.com/microsoft/terminal/blob/main/src/cascadia/
 | Child exit ownership | `TermPTY` exposes `WaitForExit`; the host also consumes its `TerminalOutput` session-terminated marker and performs asynchronous bridge cleanup | Connection implementation can be owned by this host, but the required process wrapper still must be designed |
 | Distribution risk | Package includes native terminal/ConPTY assets; beta dependency and architecture review remain | Native architecture-specific artifacts and upstream source cadence must be controlled |
 
-This comparison does not select the Easy candidate automatically. The current
-recommendation is to continue with Easy as the leading candidate while the
-packaging and later GUI-overlay constraints are resolved. If a gate fails,
-compare it with the source-derived
+The manual compatibility matrix selected Easy for the current implementation;
+the comparison remains the fallback if packaging or later GUI-overlay gates
+fail. If a gate fails, compare it with the source-derived
 Microsoft control; Microsoft's own sample documentation describes the WPF
 console sample as a skeleton and the MiniTerm sample as experimental, so a
 production choice still needs an owned connection and cleanup design. See the
@@ -99,6 +100,6 @@ confirmed that Japanese conversion candidates are positioned correctly. The
 native HWND also means WPF overlay and airspace behavior needs a later GUI
 integration test.
 
-If any gate fails, compare the candidate against a WPF control derived from
-Microsoft Windows Terminal, recording the same capability-by-capability
-results before making an adoption decision.
+If any gate fails, compare Easy against a WPF control derived from Microsoft
+Windows Terminal, recording the same capability-by-capability results before
+changing the backend selection.

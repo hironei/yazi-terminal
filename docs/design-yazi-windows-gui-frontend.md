@@ -27,7 +27,8 @@ VT output and render an alternate screen, cursor, colors, Unicode, input, and
 resize. A renderer is therefore a required dependency rather than an optional
 implementation detail.
 
-The current candidate for evaluation is `EasyWindowsTerminalControl` 1.0.38:
+The selected backend for the current implementation is
+`EasyWindowsTerminalControl` 1.0.38:
 
 - It hosts the official Windows Terminal WPF control and uses the packaged
   ConPTY implementation through `TermPTY`.
@@ -38,18 +39,30 @@ The current candidate for evaluation is `EasyWindowsTerminalControl` 1.0.38:
   resize APIs, but its low-level/beta dependency surface and native HWND
   airspace behavior remain compatibility risks.
 
-This is not an adoption decision. The Easy run passed Yazi CJK display,
-keyboard, mouse, resize, IME candidate position, normal full-screen rendering,
-deterministic 24-bit color, and unexpected child-exit handling. Packaging and
-native HWND overlay behavior remain open. If a required behavior is insufficient, compare a source-derived
-Microsoft WPF Terminal Control before choosing the production backend. Until
-that gate passes, the backend remains replaceable behind the session/control
-boundary.
+The Easy backend is selected for the current host implementation. The run
+passed Yazi CJK display, keyboard, mouse, resize, IME candidate position,
+normal full-screen rendering, deterministic 24-bit color, and unexpected
+child-exit handling. Packaging and native HWND overlay behavior remain open.
+If a later gate fails, compare a source-derived Microsoft WPF Terminal Control;
+the backend remains replaceable behind the session/control boundary.
 
-Adding the candidate package is a dependency change and requires explicit
-approval under the repository instructions. If no candidate passes the gate,
-implementation stops at the design boundary rather than substituting a small
-WPF `TextBox` or parsing screen text.
+## Dependency licensing and supply-chain decision
+
+> `EasyWindowsTerminalControl` はMIT Licenseで公開されており、内部で第三者NuGet `CI.Microsoft.Terminal.Wpf` を利用している。`CI.Microsoft.Terminal.Wpf` のNuGet metadataにはライセンスが明示されていないが、その上流であるMicrosoft Windows TerminalはMIT Licenseであり、WPF ControlのソースもMicrosoft公式リポジトリに存在する。
+>
+> `EasyWindowsTerminalControl`および`WPF-UI.Terminal`という公開MITプロジェクトで同パッケージの利用実績がある。
+>
+> v1ではNuGet依存として利用を許容する。ただし`CI.Microsoft.Terminal.Wpf`はMicrosoft公式NuGetではないため、ライセンス問題ではなく**サプライチェーン・保守性上のリスク**として記録する。
+>
+> バイナリ配布時にはMicrosoft TerminalのMIT LICENSEおよびNOTICEの扱いを改めて確認する。
+
+This is a v1 use decision, not a legal conclusion about the repackage. The
+dependency remains replaceable if its provenance, maintenance, or distribution
+terms become unacceptable.
+
+The selected package is already part of the current implementation. A future
+backend or dependency change still requires an explicit compatibility and
+license review; a small WPF `TextBox` or screen parsing remains out of scope.
 
 ## Yazi launch policy for Phase 1
 

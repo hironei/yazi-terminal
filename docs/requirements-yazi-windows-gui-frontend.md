@@ -7,9 +7,10 @@ copy its text verbatim into the repository. The user request is to review the
 requirement and execute the repository-aware development workflow. This file
 records the reviewed, testable scope for the first implementation slice.
 
-The repository is an empty initial repository. The first slice is therefore
-limited to Phase 1 (embedded WPF terminal host and Yazi process lifecycle).
-Phases 2-5 remain planned work and are not claimed as implemented here.
+This document is the Phase 1 baseline for the embedded WPF terminal host and
+Yazi process lifecycle. Later bridge, Shell context-menu, and drag-and-drop
+work is specified in separate phase documents so that this baseline does not
+silently expand its acceptance scope.
 
 ## Product goal
 
@@ -73,12 +74,13 @@ the current implementation instead evaluates `EasyWindowsTerminalControl`,
 which combines a Windows Terminal WPF control with ConPTY. This dependency
 change was explicitly requested for the current pipeline run.
 
-`EasyWindowsTerminalControl` is an evaluation target, not an adoption decision.
-The real Yazi run passed CJK, IME, keyboard input, mouse reporting, resize,
-normal full-screen rendering, deterministic 24-bit color, and unexpected child
-exit handling. Packaging and native HWND overlay behavior remain open gates. If any required behavior is insufficient,
-compare a WPF Terminal Control derived from the Microsoft Windows Terminal
-implementation before selecting the production backend.
+`EasyWindowsTerminalControl` is selected for the current implementation. The
+real Yazi run passed CJK, IME, keyboard input, mouse reporting, resize, normal
+full-screen rendering, deterministic 24-bit color, and unexpected child exit
+handling. Packaging and native HWND overlay behavior remain open production
+gates. If any required behavior is insufficient, compare a WPF Terminal
+Control derived from the Microsoft Windows Terminal implementation before
+changing the backend selection.
 
 ### MAJOR-2: bridge protocol and Yazi compatibility range are undefined
 
@@ -170,8 +172,8 @@ host, DI framework, update check, or eager Shell integration.
 
 ## Terminal host evaluation gate
 
-The current candidate must pass a real Windows/Yazi compatibility check for all
-of the following before adoption:
+The selected backend has passed a real Windows/Yazi compatibility check for all
+of the following in the current manual run:
 
 - VT output and 24-bit color
 - alternate-screen full-screen rendering
@@ -197,7 +199,15 @@ Control derived from Microsoft Windows Terminal instead.
 
 ## Requirements review status
 
-Review round 1 found no `BLOCKER`, but `MAJOR-1` through `MAJOR-7` remain.
-The requirements phase is therefore not passed. The practical next decision
-is to approve the Phase 1 terminal dependency and runtime matrix, then resolve
-the bridge and Shell/D&D contracts before their respective phases begin.
+The initial review round found no `BLOCKER`, but recorded `MAJOR-1` through
+`MAJOR-7`. The subsequent phase requirements and implementation resolved the
+bridge contract, Shell context-menu scope, drag/drop delegation, terminal input
+ownership, and ConPTY lifecycle contracts. The Easy backend also passed the
+manual capability matrix and is selected for the current implementation.
+
+The requirements phase is not fully closed: the supported Windows versions,
+CPU architectures, exact Yazi/`ya` compatibility range, and production
+packaging/native-overlay gates still need an explicit compatibility matrix.
+The current fixture and its limits are recorded in
+`docs/compatibility-matrix.md`. These are release-readiness work, not reasons
+to add another terminal or input interception implementation now.

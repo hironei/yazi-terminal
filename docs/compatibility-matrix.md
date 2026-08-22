@@ -1,0 +1,112 @@
+# Compatibility Matrix and Distribution Gates
+
+## Status
+
+This document records the current validated fixture. It is not a promise that
+every Windows version, CPU architecture, or Yazi release is supported.
+
+## Current validated fixture
+
+| Area | Validated value | Status | Boundary |
+| --- | --- | --- | --- |
+| Windows OS | OS version/build `10.0.26200` | PASS | Current fixture only; Windows 10 2004/build `19041` is the minimum candidate floor for the embedded Windows Terminal path, pending a packaged-host test. |
+| Runtime architecture | `win-x64`, AMD64 | PASS | x86 and ARM64 are explicitly excluded because the selected Easy backend is x64-only. |
+| .NET SDK | `10.0.400` | PASS | The project targets `net10.0-windows`; no older SDK is claimed. |
+| .NET runtime | `10.0.11`, Windows Desktop runtime | PASS | Framework-dependent versus self-contained distribution remains a release decision. |
+| Yazi | `26.5.6`, revision `aa52643` | PASS | This exact version is the validated fixture; no compatibility range is claimed. |
+| `ya` | `26.5.6`, revision `aa52643` | PASS | The bridge requires the paired Yazi/`ya` fixture. |
+| Bridge protocol | `yazi-desktop-host/1` | PASS | Messages are instance-bound and use the Phase 2 framed sideband transport. |
+| Bridge plugin | Repository revision `409cd5c2bc9298ee040fc2156ee86a0a2970fc12`; `main.lua` SHA-1 `1f3114030654b21ee49d23f46833519e7d62b325` | PASS | The plugin was tested through a temporary Yazi configuration. |
+| Terminal host | `EasyWindowsTerminalControl` `1.0.38` | PASS | Selected for the current implementation; production packaging remains gated. |
+| Windows Terminal dependency | `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | PASS | The product targets the package's `win-x64` native assets; x86 and ARM64 are excluded. |
+| ConPTY dependency | `Microsoft.Windows.Console.ConPTY` `1.24.260710001` | PASS | The package metadata declares MIT and describes Windows `10.0.17763.0` or newer; this is not yet the product minimum. |
+| Native ConPTY assets | `conpty.dll` for `win-x64` | PASS | The package's x86/ARM64 assets are not product targets. |
+
+The Release framework-dependent `win-x64` publish also passed with
+`PublishReadyToRun=false` after restoring with the `win-x64` RID. The publish
+directory contained `YaziDesktopHost.exe`,
+`EasyWindowsTerminalControl.dll`, `Microsoft.Terminal.Control.dll`, and
+`conpty.dll`. This proves package composition for the current x64 fixture; it
+does not prove that the packaged host starts successfully on another machine.
+
+The project now declares `PlatformTarget=AnyCPU` and the supported
+`RuntimeIdentifiers` `win-x64`. An x86 self-contained startup probe was also
+performed during the architecture review and failed before the window loaded:
+the x86 host (`PE machine 0x014C`) cannot load the x64
+`EasyWindowsTerminalControl.dll` (`PE machine 0x8664`). This is why x86 and
+ARM64 are excluded from the product target.
+
+## Manual capability result on the current fixture
+
+The Windows run passed real Yazi launch, VT/alternate-screen rendering, 24-bit
+color fixture output, CJK, keyboard, IME composition and commit, xterm mouse
+reporting, resize/reflow, close cleanup, unexpected child exit handling, and
+the required Explorer/Yazi drag-and-drop paths. Ctrl/Shift Copy/Move behavior
+also passed. Ordinary keyboard navigation that changes `cwd` while an Explorer
+drag is active is a v1 non-goal because the OLE drag loop does not deliver
+those keys to Yazi.
+
+## Distribution gates
+
+The following gates remain open before claiming a distributable support range:
+
+1. Declare the minimum Windows version and supported product editions. The
+   current candidate floor is Windows 10 2004/build `19041`, based on the
+   Windows Terminal prerequisite; it is not yet a product support claim.
+2. Decide whether to ship framework-dependent or self-contained output.
+3. Run the host on the claimed `win-x64` architecture, including native asset
+   loading and ConPTY startup. x64 is manually passed.
+4. Verify native HWND/WPF airspace behavior in the packaged application,
+   including any overlays or future dialogs.
+5. Record the supported Yazi/`ya` version policy and test at least one upgrade
+   and one rejection path for an unsupported pair.
+6. Before binary distribution, validate the Microsoft Terminal MIT `LICENSE` and
+   `NOTICE` handling, native asset redistribution, and installation layout. The
+   v1 NuGet dependency is allowed with a recorded supply-chain and maintenance
+   risk; this is not a v1 license blocker.
+
+Until these gates are closed, the support statement is limited to the current
+Windows `win-x64` fixture and the exact Yazi/`ya` pair recorded above.
+
+## Dependency license evidence
+
+The fixed package metadata was inspected from the local NuGet cache:
+
+| Package | License evidence | Distribution status |
+| --- | --- | --- |
+| `EasyWindowsTerminalControl` `1.0.38` | nuspec license expression `MIT`; upstream commit `0741a4b8853c47bcac4412d005ed4ae1d96d2c13` | Evidence recorded; verify notice obligations in the final package. |
+| `Microsoft.Windows.Console.ConPTY` `1.24.260710001` | nuspec license expression `MIT`; Microsoft Terminal project URL | Evidence recorded; verify notice obligations in the final package. |
+| `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | Local nuspec has no license expression, license URL, license file, or repository URL; it records only repackage commit `9ae724aa5b080aafbeea2bbf88db630b182cc802`. The [NuGet page](https://www.nuget.org/packages/CI.Microsoft.Terminal.Wpf/1.25.260303002) identifies owner `CI2NugetRepackageTeam` but supplies no license terms. | **V1 ALLOWED WITH RISK**; binary distribution still requires `LICENSE`/`NOTICE` confirmation. |
+
+The Microsoft Terminal repository and WPF source identify the upstream code as
+MIT, but that does not by itself establish the license chain for this separate
+CI repackage or its included native binaries. NuGet cache signatures and
+package metadata are not a substitute for a legal redistribution review. The
+v1 design therefore permits the NuGet dependency while recording supply-chain
+and maintenance risk; before binary distribution, confirm the Microsoft
+Terminal `LICENSE` and `NOTICE` handling. See the [upstream repository](https://github.com/microsoft/terminal)
+and [WPF source license header](https://github.com/microsoft/terminal/blob/main/src/cascadia/WpfTerminalControl/TerminalControl.xaml.cs)
+for the upstream evidence.
+
+## Explicit non-claims
+
+- x86 and ARM64 are not product targets, even though the upstream package
+  contains assets for those architectures.
+- The current OS build does not establish a minimum Windows support version.
+- A successful build does not prove Explorer, IME, Shell extension, elevation,
+  cloud-provider, or packaged-overlay behavior.
+- The host does not install or overwrite the user's persistent Yazi bridge
+  configuration as part of the product implementation.
+
+## External compatibility evidence
+
+- The [Microsoft Terminal repository](https://github.com/microsoft/terminal)
+  documents Windows 10 2004 (build 19041) or later for Windows Terminal.
+- The fixed `Microsoft.Windows.Console.ConPTY` package metadata describes
+  Windows `10.0.17763.0` or newer. This lower ConPTY floor does not override
+  the higher embedded Windows Terminal candidate floor.
+- The [NuGet package page](https://www.nuget.org/packages/CI.Microsoft.Terminal.Wpf/1.25.260303002)
+  identifies the package owner as `CI2NugetRepackageTeam`, but does not provide
+  license terms for the repackage. This is recorded as a v1 supply-chain and
+  maintenance risk; binary distribution still requires `LICENSE`/`NOTICE`
+  confirmation.
