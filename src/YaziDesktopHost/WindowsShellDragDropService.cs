@@ -491,14 +491,23 @@ public sealed class WindowsShellDragDropService : IDisposable
                 ThrowIfFailed(hResult, "SHBindToParent");
 
                 var iidDropTarget = IidDropTarget;
-                hResult = parent.GetUIObjectOf(
-                    IntPtr.Zero,
-                    1,
-                    [childPidl],
-                    ref iidDropTarget,
-                    IntPtr.Zero,
-                    out dropTargetPointer);
-                ThrowIfFailed(hResult, "IShellFolder.GetUIObjectOf");
+                var pidlArray = Marshal.AllocCoTaskMem(IntPtr.Size);
+                try
+                {
+                    Marshal.WriteIntPtr(pidlArray, childPidl);
+                    hResult = parent.GetUIObjectOf(
+                        IntPtr.Zero,
+                        1,
+                        pidlArray,
+                        ref iidDropTarget,
+                        IntPtr.Zero,
+                        out dropTargetPointer);
+                    ThrowIfFailed(hResult, "IShellFolder.GetUIObjectOf");
+                }
+                finally
+                {
+                    Marshal.FreeCoTaskMem(pidlArray);
+                }
 
                 IShellDropTarget target;
                 try
@@ -641,7 +650,7 @@ public sealed class WindowsShellDragDropService : IDisposable
         int CompareIds(IntPtr lParam, IntPtr pidl1, IntPtr pidl2);
         int CreateViewObject(IntPtr hwndOwner, ref Guid riid, out IntPtr result);
         int GetAttributesOf(uint count, IntPtr[] pidls, ref uint attributes);
-        int GetUIObjectOf(IntPtr hwndOwner, uint count, IntPtr[] pidls, ref Guid riid, IntPtr reserved, out IntPtr result);
+        int GetUIObjectOf(IntPtr hwndOwner, uint count, IntPtr pidlArray, ref Guid riid, IntPtr reserved, out IntPtr result);
         int GetDisplayNameOf(IntPtr pidl, uint flags, out IntPtr name);
         int SetNameOf(IntPtr hwnd, IntPtr pidl, string name, uint flags, out IntPtr newPidl);
     }
