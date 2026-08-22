@@ -130,6 +130,11 @@ operation semantics.
 
 ## Terminal operation
 
+Use the `Theme` menu at the top of the window to choose `Dark` or `Light`.
+Dark is the default and preserves the current black terminal appearance. The
+choice applies immediately to the host and embedded terminal for the current
+session; it is not persisted between launches.
+
 The embedded terminal supports the normal Yazi interaction path, including:
 
 - keyboard navigation and commands
