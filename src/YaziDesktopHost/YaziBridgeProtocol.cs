@@ -29,6 +29,8 @@ public enum YaziBridgeAvailability
 
 public sealed record YaziBridgePath(YaziBridgePathKind Kind, string Value);
 
+public sealed record YaziBridgeCommand(string Key, string Run, string Description);
+
 public sealed record YaziBridgeEnvelope(
     string Protocol,
     Guid InstanceId,
@@ -154,6 +156,77 @@ public sealed class YaziBridgeMessageParser
         {
             throw new YaziBridgeProtocolException($"Bridge {name} must be a JSON object.");
         }
+    }
+}
+
+public sealed class YaziBridgeCommandCatalogParser
+{
+    private const int MaxCommands = 512;
+    private const int MaxCommandTextLength = 4096;
+
+    public IReadOnlyList<YaziBridgeCommand> Parse(JsonElement helloPayload)
+    {
+        if (helloPayload.ValueKind != JsonValueKind.Object)
+        {
+            throw new YaziBridgeProtocolException("Bridge hello payload must be an object.");
+        }
+
+        if (!helloPayload.TryGetProperty("commands", out var commands))
+        {
+            return Array.Empty<YaziBridgeCommand>();
+        }
+
+        if (commands.ValueKind != JsonValueKind.Array || commands.GetArrayLength() > MaxCommands)
+        {
+            throw new YaziBridgeProtocolException("Bridge command catalog is invalid.");
+        }
+
+        var result = new List<YaziBridgeCommand>(commands.GetArrayLength());
+        foreach (var command in commands.EnumerateArray())
+        {
+            if (command.ValueKind != JsonValueKind.Object)
+            {
+                throw new YaziBridgeProtocolException("Bridge command entry must be an object.");
+            }
+
+            var key = OptionalString(command, "key");
+            var run = RequiredBoundedString(command, "run");
+            var description = OptionalString(command, "description") ?? string.Empty;
+            if (description.Length > MaxCommandTextLength)
+            {
+                throw new YaziBridgeProtocolException("Bridge command description is too long.");
+            }
+
+            result.Add(new YaziBridgeCommand(key ?? string.Empty, run, description));
+        }
+
+        return result;
+    }
+
+    private static string? OptionalString(JsonElement parent, string name)
+    {
+        if (!parent.TryGetProperty(name, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.String)
+        {
+            throw new YaziBridgeProtocolException($"Bridge command property '{name}' must be a string.");
+        }
+
+        return value.GetString();
+    }
+
+    private static string RequiredBoundedString(JsonElement parent, string name)
+    {
+        var value = OptionalString(parent, name);
+        if (string.IsNullOrWhiteSpace(value) || value.Length > MaxCommandTextLength)
+        {
+            throw new YaziBridgeProtocolException($"Bridge command property '{name}' is invalid.");
+        }
+
+        return value;
     }
 }
 
