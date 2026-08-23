@@ -1,6 +1,7 @@
 using System.IO.Pipes;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 
 using YaziDesktopHost;
 
@@ -24,15 +25,23 @@ var tests = new (string Name, Action Test)[]
     ("last-instance control pipe accepts a directory request", LastInstanceControlPipeAcceptsDirectoryRequest),
     ("last-instance control pipe returns a negative ACK", LastInstanceControlPipeReturnsNegativeAcknowledgement),
     ("bridge parser accepts a CJK snapshot", BridgeParserAcceptsCjkSnapshot),
+    ("bridge parser accepts a command catalog", BridgeParserAcceptsCommandCatalog),
+    ("bridge parser rejects an invalid command catalog", BridgeParserRejectsInvalidCommandCatalog),
     ("bridge parser rejects a wrong instance", BridgeParserRejectsWrongInstance),
     ("bridge reducer applies an ordered update", BridgeReducerAppliesOrderedUpdate),
     ("bridge reducer invalidates a sequence gap", BridgeReducerInvalidatesSequenceGap),
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
+    ("bridge session publishes command catalog", BridgeSessionPublishesCommandCatalog),
     ("Yazi command line uses bridge identity", YaziCommandLineUsesBridgeIdentity),
     ("Yazi directory command preserves argument boundaries", YaziDirectoryCommandPreservesArgumentBoundaries),
+    ("Yazi action command preserves argument boundaries", YaziActionCommandPreservesArgumentBoundaries),
+    ("Yazi settings reveal command preserves the Windows path", YaziSettingsRevealCommandPreservesWindowsPath),
+    ("Yazi action tokenizer handles quoted arguments", YaziActionTokenizerHandlesQuotedArguments),
+    ("Yazi action tokenizer rejects unterminated quotes", YaziActionTokenizerRejectsUnterminatedQuotes),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
+    ("host settings round trip and reject unsupported values", HostSettingsRoundTripAndRejectsUnsupportedValues),
     ("Yazi exit policy distinguishes normal and abnormal exits", YaziExitPolicyDistinguishesNormalAndAbnormalExits),
     ("shell target prefers selected paths", ShellTargetPrefersSelectedPaths),
     ("shell target preserves multiple selection", ShellTargetPreservesMultipleSelection),
@@ -42,6 +51,9 @@ var tests = new (string Name, Action Test)[]
     ("shell target resolves current directory", ShellTargetResolvesCurrentDirectory),
     ("shell target rejects unavailable, URLs, and empty state", ShellTargetRejectsUnavailableUrlsAndEmptyState),
     ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
+    ("command palette filters theme commands", CommandPaletteFiltersThemeCommands),
+    ("command palette includes Yazi commands", CommandPaletteIncludesYaziCommands),
+    ("Yazi theme loader reads the selected flavor", YaziThemeLoaderReadsSelectedFlavor),
     ("theme palettes keep dark defaults and distinct light colors", ThemePalettesKeepDistinctModes),
 };
 
@@ -442,6 +454,33 @@ static void BridgeParserAcceptsCjkSnapshot()
     Assert(message.Sequence == 1);
 }
 
+static void BridgeParserAcceptsCommandCatalog()
+{
+    using var document = JsonDocument.Parse("""
+        {
+          "commands": [
+            { "key": "g d", "run": "cd C:\\work", "description": "Go work" },
+            { "key": "q", "run": "quit", "description": "Quit" }
+          ]
+        }
+        """);
+
+    var commands = new YaziBridgeCommandCatalogParser().Parse(document.RootElement);
+    Assert(commands.Count == 2);
+    Assert(commands[0] == new YaziBridgeCommand("g d", "cd C:\\work", "Go work"));
+    Assert(commands[1].Run == "quit");
+}
+
+static void BridgeParserRejectsInvalidCommandCatalog()
+{
+    using var document = JsonDocument.Parse("""
+        { "commands": [{ "key": "q", "run": "   ", "description": "Quit" }] }
+        """);
+
+    Expect<YaziBridgeProtocolException>(() =>
+        new YaziBridgeCommandCatalogParser().Parse(document.RootElement));
+}
+
 static void BridgeParserRejectsWrongInstance()
 {
     var actualInstanceId = Guid.NewGuid();
@@ -612,6 +651,59 @@ static void BridgeSessionReconnectsAfterDisconnect()
     Assert(observedReasons.Contains("disconnect", StringComparer.Ordinal));
 }
 
+static void BridgeSessionPublishesCommandCatalog()
+{
+    var instanceId = Guid.NewGuid();
+    using var server = new YaziBridgePipeServer(instanceId);
+    var session = new YaziBridgeSession(instanceId, server);
+    var catalogs = new List<IReadOnlyList<YaziBridgeCommand>>();
+    session.CommandsChanged += commands =>
+    {
+        lock (catalogs)
+        {
+            catalogs.Add(commands);
+        }
+    };
+
+    var runTask = session.RunAsync();
+    using (var client = new NamedPipeClientStream(
+        ".",
+        server.PipeName,
+        PipeDirection.InOut,
+        PipeOptions.Asynchronous))
+    {
+        client.Connect(5000);
+        SendFrame(client, Frame(
+            instanceId,
+            0,
+            "hello",
+            new
+            {
+                commands = new[]
+                {
+                    new { key = "q", run = "quit", description = "Quit" },
+                },
+            }));
+        WaitUntil(() =>
+        {
+            lock (catalogs)
+            {
+                return catalogs.Any(catalog => catalog.Count == 1);
+            }
+        });
+    }
+
+    session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    runTask.GetAwaiter().GetResult();
+
+    lock (catalogs)
+    {
+        Assert(catalogs.Any(catalog => catalog.Count == 1
+            && catalog[0] == new YaziBridgeCommand("q", "quit", "Quit")));
+        Assert(catalogs[^1].Count == 0);
+    }
+}
+
 static void SendFrame(NamedPipeClientStream client, byte[] frame)
 {
     client.Write(frame, 0, frame.Length);
@@ -655,6 +747,54 @@ static void YaziDirectoryCommandPreservesArgumentBoundaries()
         @"C:\資料\space folder"]));
 }
 
+static void YaziActionCommandPreservesArgumentBoundaries()
+{
+    var startInfo = YaziCommandController.CreateStartInfo(
+        @"C:\tools\ya.exe",
+        "12345",
+        "shell -- \"powershell.exe\" --block");
+
+    Assert(startInfo.ArgumentList.SequenceEqual([
+        "emit-to",
+        "12345",
+        "shell",
+        "--",
+        "powershell.exe",
+        "--block"]));
+}
+
+static void YaziSettingsRevealCommandPreservesWindowsPath()
+{
+    var path = @"C:\Users\hiron\AppData\Local\YaziTerminal\settings.json";
+    var startInfo = YaziCommandController.CreateStartInfo(
+        @"C:\tools\ya.exe",
+        "12345",
+        $"reveal \"{path}\"");
+
+    Assert(startInfo.ArgumentList.SequenceEqual([
+        "emit-to",
+        "12345",
+        "reveal",
+        path]));
+}
+
+static void YaziActionTokenizerHandlesQuotedArguments()
+{
+    Assert(YaziCommandController.TryTokenize(
+        "plugin command-palette \"argument with spaces\" 'single quoted'",
+        out var tokens));
+    Assert(tokens.SequenceEqual([
+        "plugin",
+        "command-palette",
+        "argument with spaces",
+        "single quoted"]));
+}
+
+static void YaziActionTokenizerRejectsUnterminatedQuotes()
+{
+    Assert(!YaziCommandController.TryTokenize("cd \"C:\\work", out _));
+}
+
 static void BridgeEnvironmentScopeRestoresValues()
 {
     var names = new[]
@@ -662,6 +802,10 @@ static void BridgeEnvironmentScopeRestoresValues()
         "YAZI_DESKTOP_HOST_PIPE",
         "YAZI_DESKTOP_HOST_INSTANCE_ID",
         "YAZI_DESKTOP_HOST_PROTOCOL",
+        "YAZI_CONFIG_HOME",
+        "COLORTERM",
+        "TERM",
+        "NO_COLOR",
     };
     var previousValues = names.ToDictionary(
         name => name,
@@ -681,6 +825,10 @@ static void BridgeEnvironmentScopeRestoresValues()
             Assert(Environment.GetEnvironmentVariable("YAZI_DESKTOP_HOST_PIPE") == @"\\.\pipe\yazi-test");
             Assert(Environment.GetEnvironmentVariable("YAZI_DESKTOP_HOST_INSTANCE_ID") == instanceId.ToString("D"));
             Assert(Environment.GetEnvironmentVariable("YAZI_DESKTOP_HOST_PROTOCOL") == YaziBridgeMessageParser.SupportedProtocol);
+            Assert(Environment.GetEnvironmentVariable("YAZI_CONFIG_HOME") == YaziThemeLoader.ResolveConfigHome());
+            Assert(Environment.GetEnvironmentVariable("COLORTERM") == "truecolor");
+            Assert(Environment.GetEnvironmentVariable("TERM") == "xterm-256color");
+            Assert(Environment.GetEnvironmentVariable("NO_COLOR") is null);
         }
 
         foreach (var name in names)
@@ -825,13 +973,130 @@ static void ThemePalettesKeepDistinctModes()
 
     Assert(dark.TerminalBackground == new RgbColor(0, 0, 0));
     Assert(dark.TerminalForeground == new RgbColor(255, 255, 255));
-    Assert(light.TerminalBackground == new RgbColor(251, 251, 251));
-    Assert(light.TerminalForeground == new RgbColor(31, 31, 31));
+    Assert(light.HostBackground == new RgbColor(238, 232, 213));
+    Assert(light.TerminalBackground == new RgbColor(253, 246, 227));
+    Assert(light.HostForeground == new RgbColor(7, 54, 66));
+    Assert(light.PaletteForeground == new RgbColor(7, 54, 66));
+    Assert(light.TerminalForeground == new RgbColor(7, 54, 66));
     Assert(dark.HostBackground != light.HostBackground);
     Assert(dark.TerminalSelectionBackground != light.TerminalSelectionBackground);
+    Assert(light.PaletteBackground == new RgbColor(253, 246, 227));
+    Assert(light.PaletteInputBackground == new RgbColor(238, 232, 213));
+    Assert(light.PaletteSelectionBackground == new RgbColor(38, 139, 210));
+    Assert(light.PaletteSelectionForeground == new RgbColor(253, 246, 227));
     Assert(dark.TerminalColorTable.Count == 16);
     Assert(light.TerminalColorTable.Count == 16);
-    Assert(light.TerminalColorTable[15] == new RgbColor(64, 64, 64));
+    Assert(light.TerminalColorTable[0] == new RgbColor(7, 54, 66));
+    Assert(light.TerminalColorTable[15] == new RgbColor(253, 246, 227));
+}
+
+static void HostSettingsRoundTripAndRejectsUnsupportedValues()
+{
+    var path = Path.Combine(Path.GetTempPath(), $"yazi-settings-test-{Guid.NewGuid():N}.json");
+    try
+    {
+        var expected = new HostSettings(AppThemeMode.Light, "Consolas", 18);
+        HostSettingsStore.Save(expected, path);
+        var actual = HostSettingsStore.Load(path);
+
+        Assert(actual == expected);
+
+        File.WriteAllText(path, "{\"Theme\":\"Light\",\"FontFamily\":\"Not Installed\",\"FontSize\":99}");
+        var fallback = HostSettingsStore.Load(path);
+        Assert(fallback == HostSettings.Defaults with { ThemeMode = AppThemeMode.Light });
+    }
+    finally
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+}
+
+static void YaziThemeLoaderReadsSelectedFlavor()
+{
+    var configHome = Path.Combine(Path.GetTempPath(), $"yazi-theme-test-{Guid.NewGuid():N}");
+    var flavorDirectory = Path.Combine(configHome, "flavors", "test-light.yazi");
+    Directory.CreateDirectory(flavorDirectory);
+
+    try
+    {
+        File.WriteAllText(
+            Path.Combine(configHome, "theme.toml"),
+            """
+            [flavor]
+            dark = "test-dark"
+            light = "test-light"
+            """);
+        File.WriteAllText(
+            Path.Combine(flavorDirectory, "flavor.toml"),
+            """
+            [mgr]
+            cwd = { fg = "#179299" }
+            border_style = { fg = "#8c8fa1" }
+
+            [app]
+            overall = { bg = "#fdf6e3" }
+
+            [tabs]
+            active = { fg = "#eff1f5", bg = "#1e66f5", bold = true }
+
+            [filetype]
+            rules = [
+                { url = "*", fg = "#4c4f69" },
+                { url = "*/", fg = "#1e66f5" },
+            ]
+            """);
+
+        var colors = YaziThemeLoader.Load(AppThemeMode.Light, configHome);
+        Assert(colors is not null);
+        Assert(colors!.Foreground == new RgbColor(76, 79, 105));
+        Assert(colors.Border == new RgbColor(140, 143, 161));
+        Assert(colors.SelectionBackground == new RgbColor(30, 102, 245));
+        Assert(colors.SelectionForeground == new RgbColor(239, 241, 245));
+        Assert(colors.FlavorName == "test-light");
+        Assert(colors.FileForeground == new RgbColor(76, 79, 105));
+        Assert(colors.DirectoryForeground == new RgbColor(30, 102, 245));
+        Assert(colors.TerminalBackground == new RgbColor(253, 246, 227));
+
+        var palette = ThemePalette.For(AppThemeMode.Light, colors);
+        Assert(palette.HostBackground == new RgbColor(238, 232, 213));
+        Assert(palette.TerminalBackground == new RgbColor(253, 246, 227));
+        Assert(palette.HostForeground == new RgbColor(76, 79, 105));
+        Assert(palette.PaletteBorder == new RgbColor(140, 143, 161));
+    }
+    finally
+    {
+        if (Directory.Exists(configHome))
+        {
+            Directory.Delete(configHome, recursive: true);
+        }
+    }
+}
+
+static void CommandPaletteFiltersThemeCommands()
+{
+    var commands = CommandPaletteCommands.All;
+
+    Assert(commands.Count == 3);
+    Assert(CommandPaletteCommands.Filter(commands, "light").Single().Id == PaletteCommandId.LightTheme);
+    Assert(CommandPaletteCommands.Filter(commands, "dark host").Single().Id == PaletteCommandId.DarkTheme);
+    Assert(CommandPaletteCommands.Filter(commands, "settings.json").Single().Id == PaletteCommandId.EditSettings);
+    Assert(CommandPaletteCommands.Filter(commands, "missing").Count == 0);
+    Assert(CommandPaletteCommands.Filter(commands, " ").SequenceEqual(commands));
+}
+
+static void CommandPaletteIncludesYaziCommands()
+{
+    var commands = CommandPaletteCommands.WithYaziCommands([
+        new YaziBridgeCommand("g d", "cd C:\\work", "Go work"),
+    ]);
+
+    Assert(commands.Count == 4);
+    Assert(commands[^1].Id == PaletteCommandId.YaziAction);
+    Assert(commands[^1].Title == "Yazi: Go work");
+    Assert(CommandPaletteCommands.Filter(commands, "C:\\work").Single().YaziCommand?.Run == "cd C:\\work");
 }
 
 static void AssertDeclaredMethods(Type declaringType, string nestedTypeName, params string[] expectedNames)

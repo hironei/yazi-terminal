@@ -7,10 +7,12 @@ public sealed class YaziBridgeSession : IAsyncDisposable
     private readonly Guid _instanceId;
     private readonly IYaziBridgeTransport _transport;
     private readonly YaziBridgeMessageParser _parser = new();
+    private readonly YaziBridgeCommandCatalogParser _commandCatalogParser = new();
     private readonly YaziBridgeStateReducer _reducer;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly object _gate = new();
     private Task? _runTask;
+    private IReadOnlyList<YaziBridgeCommand> _commands = Array.Empty<YaziBridgeCommand>();
     private bool _disposed;
 
     public YaziBridgeSession(Guid instanceId, IYaziBridgeTransport transport)
@@ -27,9 +29,13 @@ public sealed class YaziBridgeSession : IAsyncDisposable
 
     public event Action<YaziBridgeState?>? StateChanged;
 
+    public event Action<IReadOnlyList<YaziBridgeCommand>>? CommandsChanged;
+
     public event Action<string>? Disconnected;
 
     public YaziBridgeState? State => _reducer.State;
+
+    public IReadOnlyList<YaziBridgeCommand> Commands => _commands;
 
     public Task RunAsync(CancellationToken cancellationToken = default)
     {
@@ -92,6 +98,7 @@ public sealed class YaziBridgeSession : IAsyncDisposable
                 try
                 {
                     connection = await _transport.AcceptAsync(linkedCancellation.Token).ConfigureAwait(false);
+                    SetCommands(Array.Empty<YaziBridgeCommand>());
                     reason = await ReadConnectionAsync(connection, linkedCancellation.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
@@ -120,6 +127,7 @@ public sealed class YaziBridgeSession : IAsyncDisposable
                     if (!linkedCancellation.IsCancellationRequested)
                     {
                         _reducer.MarkDisconnected();
+                        SetCommands(Array.Empty<YaziBridgeCommand>());
                         RaiseStateChanged(null);
                         RaiseDisconnected(reason);
                         unavailableNotificationRaised = true;
@@ -131,6 +139,7 @@ public sealed class YaziBridgeSession : IAsyncDisposable
         {
             _transport.Dispose();
             _reducer.MarkDisconnected();
+            SetCommands(Array.Empty<YaziBridgeCommand>());
             if (!unavailableNotificationRaised)
             {
                 RaiseStateChanged(null);
@@ -155,6 +164,10 @@ public sealed class YaziBridgeSession : IAsyncDisposable
             {
                 message = _parser.Parse(frame, _instanceId);
                 _reducer.Apply(message);
+                if (message.Kind == YaziBridgeMessageKind.Hello)
+                {
+                    SetCommands(_commandCatalogParser.Parse(message.Payload));
+                }
             }
             catch (YaziBridgeProtocolException)
             {
@@ -196,6 +209,19 @@ public sealed class YaziBridgeSession : IAsyncDisposable
         catch
         {
             // A feature subscriber must not change the session shutdown result.
+        }
+    }
+
+    private void SetCommands(IReadOnlyList<YaziBridgeCommand> commands)
+    {
+        _commands = commands;
+        try
+        {
+            CommandsChanged?.Invoke(commands);
+        }
+        catch
+        {
+            // A feature subscriber must not terminate the bridge receive loop.
         }
     }
 }

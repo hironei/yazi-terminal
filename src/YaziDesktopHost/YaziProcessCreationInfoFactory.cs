@@ -11,6 +11,10 @@ public static class YaziProcessLaunchConfiguration
         "YAZI_DESKTOP_HOST_PIPE",
         "YAZI_DESKTOP_HOST_INSTANCE_ID",
         "YAZI_DESKTOP_HOST_PROTOCOL",
+        "YAZI_CONFIG_HOME",
+        "COLORTERM",
+        "TERM",
+        "NO_COLOR",
     ];
 
     public static string CreateCommandLine(string executable)
@@ -67,6 +71,12 @@ public static class YaziProcessLaunchConfiguration
             Environment.SetEnvironmentVariable(
                 "YAZI_DESKTOP_HOST_PROTOCOL",
                 YaziBridgeMessageParser.SupportedProtocol);
+            Environment.SetEnvironmentVariable(
+                "YAZI_CONFIG_HOME",
+                YaziThemeLoader.ResolveConfigHome());
+            Environment.SetEnvironmentVariable("COLORTERM", "truecolor");
+            Environment.SetEnvironmentVariable("TERM", "xterm-256color");
+            Environment.SetEnvironmentVariable("NO_COLOR", null);
         }
 
         public void Dispose()

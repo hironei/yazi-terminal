@@ -158,10 +158,51 @@ operation semantics.
 
 ## Terminal operation
 
-Use the `Theme` menu at the top of the window to choose `Dark` or `Light`.
-Dark is the default and preserves the current black terminal appearance. The
-choice applies immediately to the host and embedded terminal for the current
-session; it is not persisted between launches.
+Press `Ctrl+Shift+P` to open the Command Palette. Type `light` or `dark`,
+select `Theme: Light` or `Theme: Dark`, and press `Enter`. Use `Up`/`Down` or
+`k`/`j` to move the selection; `j` and `k` navigate when the query is empty
+and remain available as filter text after typing. Press `Escape` to close the
+palette without applying a command. Dark is the default. Theme changes apply
+immediately to the host and embedded terminal for the current session and are
+persisted for the next launch.
+
+To edit the terminal font family or font size, select
+`Settings: Edit terminal appearance`. The host saves the current values to
+`%LOCALAPPDATA%\YaziTerminal\settings.json`, then asks Yazi to reveal and open
+that file using Yazi's configured opener/editor. Edit the JSON values and
+save the file. The file contains `Theme`, `FontFamily`,
+and `FontSize`; unsupported values fall back to the defaults. When the file is
+saved, the running host watches it and applies valid changes immediately.
+
+When Yazi's `%APPDATA%\yazi\config\theme.toml` selects a flavor, the host also
+reads the matching `flavors\<name>.yazi\flavor.toml` on startup and when the
+palette is opened. The integration boundary is:
+
+| Flavor value | Host behavior |
+| --- | --- |
+| `[flavor]` `light`/`dark` | Read to select the matching flavor file. |
+| `[app]` `overall.bg` | Used as the embedded terminal background when present. |
+| `[mgr]` `cwd` and `[filetype]` fallback `url = "*"` | Used as the host/default terminal foreground when present. |
+| `[mgr]` `border_style` | Used for the command palette border. |
+| `[tabs]` `active` | Used for the command palette selected-row colors. |
+| `[filetype]` MIME/URL-specific rules, including folder `url = "*/"` | Not repainted by the host; Yazi itself must emit these colors through VT. |
+| `[icon]`, `[mode]`, `[status]`, `[pick]`, `[input]`, `[cmp]`, `[tasks]`, `[which]`, `[help]`, `[spot]`, `[notify]` | Not parsed by the host; these remain Yazi-owned styles. |
+| ANSI color table | Not defined by `flavor.toml`; the built-in Solarized/Dark fallback remains in use. |
+
+The host launches Yazi with `COLORTERM=truecolor` and `TERM=xterm-256color`,
+and clears an inherited `NO_COLOR` value so file/folder colors emitted by Yazi
+can be rendered by the embedded terminal.
+The host does not synthesize file colors from the flavor file: if the terminal
+version and host version differ, check Yazi's selected flavor and VT color
+capability first. Invalid or missing theme files do not prevent startup;
+unsupported host mappings use built-in fallbacks.
+
+When the optional `yazi-desktop-host.yazi` bridge plugin is installed, the
+palette also lists actions from the configured Yazi `keymap.toml`, including
+their descriptions and key bindings. Selecting one sends the action to the
+current Yazi instance through `ya emit-to`; plugin and `shell` actions remain
+owned and interpreted by Yazi. The catalog is read when the bridge connects,
+so restart Yazi Terminal after changing the keymap.
 
 The embedded terminal supports the normal Yazi interaction path, including:
 

@@ -1,5 +1,8 @@
 # Requirements: Light/Dark Theme Switching
 
+> Superseded by [requirements-command-palette.md](requirements-command-palette.md),
+> which replaces the permanent Theme menu with a command palette.
+
 Issue: #3
 
 ## Goal

@@ -1,5 +1,8 @@
 # Design: Light/Dark Theme Switching
 
+> Superseded by [design-command-palette.md](design-command-palette.md), which
+> replaces the permanent Theme menu with a command palette.
+
 Issue: #3
 
 ## Boundary

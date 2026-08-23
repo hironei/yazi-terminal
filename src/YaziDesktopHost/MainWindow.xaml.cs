@@ -4,6 +4,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Input;
 using System.Windows.Threading;
 using EasyWindowsTerminalControl;
 using Microsoft.Terminal.Wpf;
@@ -28,11 +29,16 @@ public partial class MainWindow : Window
     private YaziShellInvocation? _rightClickInvocation;
     private TerminalWindowSubclass? _terminalWindowSubclass;
     private bool _isClosing;
-    private AppThemeMode _themeMode = AppThemeMode.Dark;
+    private AppThemeMode _themeMode;
+    private string _fontFamily = HostSettingsCatalog.DefaultFontFamily;
+    private int _fontSize = HostSettingsCatalog.DefaultFontSize;
+    private bool _isCommandPaletteOpen;
     private string? _yaziClientId;
     private string? _yaExecutable;
     private bool _yaziReady;
     private readonly SemaphoreSlim _directoryRequestGate = new(1, 1);
+    private FileSystemWatcher? _settingsWatcher;
+    private DispatcherTimer? _settingsReloadTimer;
 
     private const int WmContextMenu = 0x007B;
     private const int WmRButtonDown = 0x0204;
@@ -40,6 +46,7 @@ public partial class MainWindow : Window
     private const int WmKeyDown = 0x0100;
     private const int WmSysKeyDown = 0x0104;
     private const int VkF10 = 0x79;
+    private const int VkP = 0x50;
     private const int VkShift = 0x10;
     private const int VkControl = 0x11;
 
@@ -53,37 +60,161 @@ public partial class MainWindow : Window
         _initialDirectory = Path.GetFullPath(initialDirectory);
         _lastInstanceServer = new LastInstanceControlServer();
         _lastInstanceServer.DirectoryRequested += LastInstanceServer_DirectoryRequestedAsync;
+        var settings = HostSettingsStore.Load();
+        _themeMode = settings.ThemeMode;
+        _fontFamily = settings.FontFamily;
+        _fontSize = settings.FontSize;
         InitializeComponent();
         if (!_lastInstanceServer.Start())
         {
             AppLogger.Log("last_instance_control_unavailable");
         }
         ApplyTheme(_themeMode);
+        StartSettingsWatcher();
     }
 
-    private void DarkThemeMenuItem_Click(object sender, RoutedEventArgs e)
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        ApplyTheme(AppThemeMode.Dark);
-    }
-
-    private void LightThemeMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        ApplyTheme(AppThemeMode.Light);
+        if (IsCommandPaletteGesture(e.Key, e.SystemKey, Keyboard.Modifiers))
+        {
+            e.Handled = true;
+            ShowCommandPalette();
+        }
     }
 
     private void ApplyTheme(AppThemeMode mode)
     {
         _themeMode = mode;
-        var colors = ThemePalette.For(mode);
+        var colors = ThemePalette.For(mode, YaziThemeLoader.Load(mode));
         Resources["HostBackgroundBrush"] = CreateBrush(colors.HostBackground);
         Resources["HostForegroundBrush"] = CreateBrush(colors.HostForeground);
-        Resources["MenuBackgroundBrush"] = CreateBrush(colors.HostBackground);
-        Resources["MenuBorderBrush"] = CreateBrush(colors.MenuBorder);
         Resources["TerminalBackgroundBrush"] = CreateBrush(colors.TerminalBackground);
-        DarkThemeMenuItem.IsChecked = mode == AppThemeMode.Dark;
-        LightThemeMenuItem.IsChecked = mode == AppThemeMode.Light;
 
         ApplyTerminalTheme(colors);
+    }
+
+    private void ShowCommandPalette()
+    {
+        if (_isClosing || _isCommandPaletteOpen)
+        {
+            return;
+        }
+
+        _isCommandPaletteOpen = true;
+        try
+        {
+            var palette = new CommandPaletteWindow(
+                ThemePalette.For(_themeMode, YaziThemeLoader.Load(_themeMode)),
+                CommandPaletteCommands.WithYaziCommands(_bridgeSession?.Commands ?? Array.Empty<YaziBridgeCommand>()))
+            {
+                Owner = this,
+            };
+            if (palette.ShowDialog() == true
+                && palette.SelectedCommand is { } command)
+            {
+                ExecutePaletteCommand(command);
+            }
+        }
+        finally
+        {
+            _isCommandPaletteOpen = false;
+            _terminal?.Focus();
+        }
+    }
+
+    private void ExecutePaletteCommand(CommandPaletteCommand command)
+    {
+        if (command.Id is PaletteCommandId.DarkTheme or PaletteCommandId.LightTheme)
+        {
+            ApplyTheme(command.ThemeMode);
+            SaveSettings();
+            return;
+        }
+
+        if (command.Id == PaletteCommandId.EditSettings)
+        {
+            SaveSettings();
+            if (_yaExecutable is null || _yaziClientId is null)
+            {
+                AppLogger.Log("yazi_command_unavailable");
+                return;
+            }
+
+            _ = EditSettingsInYaziAsync(_yaExecutable, _yaziClientId, HostSettingsStore.GetPath());
+            return;
+        }
+
+        if (command.YaziCommand is not { } yaziCommand
+            || _yaExecutable is null
+            || _yaziClientId is null)
+        {
+            AppLogger.Log("yazi_command_unavailable");
+            return;
+        }
+
+        _ = ExecuteYaziCommandAsync(yaziCommand.Run, _yaExecutable, _yaziClientId);
+    }
+
+    private static async Task EditSettingsInYaziAsync(
+        string yaExecutable,
+        string clientId,
+        string settingsPath)
+    {
+        try
+        {
+            if (!await YaziCommandController.ExecuteAsync(
+                    yaExecutable,
+                    clientId,
+                    $"reveal \"{settingsPath}\"")
+                    .ConfigureAwait(true)
+                || !await YaziCommandController.ExecuteAsync(yaExecutable, clientId, "open")
+                    .ConfigureAwait(true))
+            {
+                AppLogger.Log("yazi_settings_edit_failed");
+            }
+        }
+        catch (ArgumentException exception)
+        {
+            AppLogger.Log("yazi_settings_edit_invalid", exception);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+        {
+            AppLogger.Log("yazi_settings_edit_failed", exception);
+        }
+    }
+
+    private static async Task ExecuteYaziCommandAsync(
+        string run,
+        string yaExecutable,
+        string clientId)
+    {
+        try
+        {
+            if (!await YaziCommandController.ExecuteAsync(yaExecutable, clientId, run)
+                    .ConfigureAwait(true))
+            {
+                AppLogger.Log("yazi_command_failed");
+            }
+        }
+        catch (ArgumentException exception)
+        {
+            AppLogger.Log("yazi_command_invalid", exception);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+        {
+            AppLogger.Log("yazi_command_failed", exception);
+        }
+    }
+
+    private static bool IsCommandPaletteGesture(
+        Key key,
+        Key systemKey,
+        ModifierKeys modifiers)
+    {
+        var pressedKey = key == Key.System ? systemKey : key;
+        var requiredModifiers = ModifierKeys.Control | ModifierKeys.Shift;
+        return pressedKey == Key.P
+            && (modifiers & requiredModifiers) == requiredModifiers;
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -122,9 +253,10 @@ public partial class MainWindow : Window
                 StartupCommandLine = launch.CommandLine,
                 WorkingDirectory = _initialDirectory,
                 ConPTYTerm = _term,
-                Theme = CreateTerminalTheme(ThemePalette.For(_themeMode)),
-                FontFamilyWhenSettingTheme = new FontFamily("MS Gothic"),
-                FontSizeWhenSettingTheme = 14,
+                Theme = CreateTerminalTheme(
+                    ThemePalette.For(_themeMode, YaziThemeLoader.Load(_themeMode))),
+                FontFamilyWhenSettingTheme = new FontFamily(_fontFamily),
+                FontSizeWhenSettingTheme = _fontSize,
                 Win32InputMode = true,
             };
             _term.TermReady += Term_TermReady;
@@ -154,7 +286,103 @@ public partial class MainWindow : Window
         }
 
         _isClosing = true;
+        StopSettingsWatcher();
         DisposeSession();
+    }
+
+    private void StartSettingsWatcher()
+    {
+        var settingsPath = HostSettingsStore.GetPath();
+        var directory = Path.GetDirectoryName(settingsPath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(directory);
+            _settingsReloadTimer = new DispatcherTimer(
+                TimeSpan.FromMilliseconds(300),
+                DispatcherPriority.Background,
+                (_, _) => ReloadSettingsFromDisk(),
+                Dispatcher)
+            {
+                IsEnabled = false,
+            };
+            _settingsWatcher = new FileSystemWatcher(directory, Path.GetFileName(settingsPath))
+            {
+                NotifyFilter = NotifyFilters.LastWrite
+                    | NotifyFilters.Size
+                    | NotifyFilters.FileName,
+                EnableRaisingEvents = true,
+            };
+            _settingsWatcher.Changed += SettingsFileChanged;
+            _settingsWatcher.Created += SettingsFileChanged;
+            _settingsWatcher.Renamed += SettingsFileChanged;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            AppLogger.Log("settings_watch_failed", exception);
+        }
+    }
+
+    private void SettingsFileChanged(object sender, FileSystemEventArgs e)
+    {
+        if (_isClosing || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Background,
+            new Action(() =>
+            {
+                if (!_isClosing && _settingsReloadTimer is not null)
+                {
+                    _settingsReloadTimer.Stop();
+                    _settingsReloadTimer.Start();
+                }
+            }));
+    }
+
+    private void ReloadSettingsFromDisk()
+    {
+        _settingsReloadTimer?.Stop();
+        if (_isClosing || !HostSettingsStore.TryLoad(HostSettingsStore.GetPath(), out var settings))
+        {
+            return;
+        }
+
+        if (_themeMode == settings.ThemeMode
+            && string.Equals(_fontFamily, settings.FontFamily, StringComparison.Ordinal)
+            && _fontSize == settings.FontSize)
+        {
+            return;
+        }
+
+        _themeMode = settings.ThemeMode;
+        _fontFamily = settings.FontFamily;
+        _fontSize = settings.FontSize;
+        ApplyTheme(_themeMode);
+        AppLogger.Log("settings_reloaded");
+    }
+
+    private void StopSettingsWatcher()
+    {
+        _settingsReloadTimer?.Stop();
+        _settingsReloadTimer = null;
+        if (_settingsWatcher is null)
+        {
+            return;
+        }
+
+        _settingsWatcher.EnableRaisingEvents = false;
+        _settingsWatcher.Changed -= SettingsFileChanged;
+        _settingsWatcher.Created -= SettingsFileChanged;
+        _settingsWatcher.Renamed -= SettingsFileChanged;
+        _settingsWatcher.Dispose();
+        _settingsWatcher = null;
     }
 
     private async Task<bool> LastInstanceServer_DirectoryRequestedAsync(
@@ -357,6 +585,12 @@ public partial class MainWindow : Window
             _shellDragDrop.HandleMessage(hwnd, message, wParam, ref handled);
         }
 
+        if (TryHandleCommandPaletteShortcut(message, wParam))
+        {
+            handled = true;
+            return IntPtr.Zero;
+        }
+
         if (_terminalWindowSubclass is not null)
         {
             return IntPtr.Zero;
@@ -468,6 +702,11 @@ public partial class MainWindow : Window
             return false;
         }
 
+        if (TryHandleCommandPaletteShortcut(message, wParam))
+        {
+            return true;
+        }
+
         if (message is WmRButtonDown or WmRButtonUp or WmContextMenu or WmKeyDown or WmSysKeyDown)
         {
             AppLogger.Log(
@@ -523,6 +762,22 @@ public partial class MainWindow : Window
         }
 
         return false;
+    }
+
+    private bool TryHandleCommandPaletteShortcut(int message, IntPtr wParam)
+    {
+        if (message is not (WmKeyDown or WmSysKeyDown)
+            || wParam.ToInt32() != VkP
+            || !IsKeyDown(VkControl)
+            || !IsKeyDown(VkShift))
+        {
+            return false;
+        }
+
+        Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            new Action(ShowCommandPalette));
+        return true;
     }
 
     private static string MessageName(int message) => message switch
@@ -853,9 +1108,14 @@ public partial class MainWindow : Window
 
         terminal.SetTheme(
             CreateTerminalTheme(colors),
-            "MS Gothic",
-            14,
+            _fontFamily,
+            (short)_fontSize,
             ToMediaColor(colors.TerminalBackground));
+    }
+
+    private void SaveSettings()
+    {
+        HostSettingsStore.Save(new HostSettings(_themeMode, _fontFamily, _fontSize));
     }
 
     private static SolidColorBrush CreateBrush(RgbColor color)
