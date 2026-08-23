@@ -33,6 +33,7 @@ var tests = new (string Name, Action Test)[]
     ("Yazi command line uses bridge identity", YaziCommandLineUsesBridgeIdentity),
     ("Yazi directory command preserves argument boundaries", YaziDirectoryCommandPreservesArgumentBoundaries),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
+    ("Yazi exit policy distinguishes normal and abnormal exits", YaziExitPolicyDistinguishesNormalAndAbnormalExits),
     ("shell target prefers selected paths", ShellTargetPrefersSelectedPaths),
     ("shell target preserves multiple selection", ShellTargetPreservesMultipleSelection),
     ("shell target falls back to hovered path", ShellTargetFallsBackToHoveredPath),
@@ -694,6 +695,13 @@ static void BridgeEnvironmentScopeRestoresValues()
             Environment.SetEnvironmentVariable(name, value);
         }
     }
+}
+
+static void YaziExitPolicyDistinguishesNormalAndAbnormalExits()
+{
+    Assert(YaziProcessExitPolicy.IsNormalExit(0));
+    Assert(!YaziProcessExitPolicy.IsNormalExit(1));
+    Assert(!YaziProcessExitPolicy.IsNormalExit(-1));
 }
 
 static void ShellTargetPrefersSelectedPaths()

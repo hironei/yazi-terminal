@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Reflection;
 using System.IO;
 using System.Windows;
 using System.Windows.Interop;
@@ -557,7 +558,7 @@ public partial class MainWindow : Window
         if (sender is TermPTY term
             && string.Equals(e.Data, "Session Terminated", StringComparison.Ordinal))
         {
-            Dispatcher.BeginInvoke(() => HandleUnexpectedExit(term));
+            Dispatcher.BeginInvoke(() => HandleProcessExit(term));
         }
     }
 
@@ -613,7 +614,8 @@ public partial class MainWindow : Window
                 if (!cancellationToken.IsCancellationRequested)
                 {
                     AppLogger.Log("yazi_process_exit_detected");
-                    Dispatcher.Invoke(() => HandleUnexpectedExit(term));
+                    var exitCode = ReadExitCode(process);
+                    Dispatcher.Invoke(() => HandleProcessExit(term, exitCode));
                 }
             }
             catch (Exception exception)
@@ -625,6 +627,64 @@ public partial class MainWindow : Window
                 }
             }
         });
+    }
+
+    private void HandleProcessExit(TermPTY term, int? exitCode = null)
+    {
+        if (_isClosing || !ReferenceEquals(_term, term))
+        {
+            return;
+        }
+
+        if (exitCode is null)
+        {
+            var process = term.Process;
+            if (process is null)
+            {
+                HandleUnexpectedExit(term);
+                return;
+            }
+
+            try
+            {
+                if (!process.HasExited)
+                {
+                    return;
+                }
+
+                exitCode = ReadExitCode(process);
+            }
+            catch (Exception exception)
+            {
+                AppLogger.Log("yazi_exit_code_read_failed", exception);
+                HandleUnexpectedExit(term);
+                return;
+            }
+        }
+
+        if (!YaziProcessExitPolicy.IsNormalExit(exitCode.Value))
+        {
+            HandleUnexpectedExit(term);
+            return;
+        }
+
+        _isClosing = true;
+        AppLogger.Log("yazi_normal_exit");
+        DisposeSession();
+        Close();
+    }
+
+    private static int ReadExitCode(object process)
+    {
+        var processProperty = process.GetType().GetProperty(
+            "Process",
+            BindingFlags.Public | BindingFlags.Instance);
+        if (processProperty?.GetValue(process) is System.Diagnostics.Process systemProcess)
+        {
+            return systemProcess.ExitCode;
+        }
+
+        throw new InvalidOperationException("The terminal process exit code is unavailable.");
     }
 
     private void HandleUnexpectedExit(TermPTY term)
