@@ -9,6 +9,7 @@
         Width="1280"
         Height="800"
         Loaded="Window_Loaded"
+        Activated="Window_Activated"
         PreviewKeyDown="Window_PreviewKeyDown"
         Closing="Window_Closing">
     <Grid Background="{DynamicResource HostBackgroundBrush}">
