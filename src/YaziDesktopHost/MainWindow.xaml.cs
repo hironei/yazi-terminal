@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Reflection;
 using System.IO;
 using System.Windows;
 using System.Windows.Interop;
@@ -555,9 +556,10 @@ public partial class MainWindow : Window
     private void Term_TerminalOutput(object? sender, TerminalOutputEventArgs e)
     {
         if (sender is TermPTY term
-            && string.Equals(e.Data, "Session Terminated", StringComparison.Ordinal))
+            && string.Equals(e.Data, "Session Terminated", StringComparison.Ordinal)
+            && _processMonitorTask is null)
         {
-            Dispatcher.BeginInvoke(() => HandleUnexpectedExit(term));
+            Dispatcher.BeginInvoke(() => HandleProcessExit(term));
         }
     }
 
@@ -605,6 +607,8 @@ public partial class MainWindow : Window
             return Task.CompletedTask;
         }
 
+        var systemProcess = TryGetSystemProcess(process);
+
         return Task.Run(() =>
         {
             try
@@ -613,7 +617,18 @@ public partial class MainWindow : Window
                 if (!cancellationToken.IsCancellationRequested)
                 {
                     AppLogger.Log("yazi_process_exit_detected");
-                    Dispatcher.Invoke(() => HandleUnexpectedExit(term));
+                    int exitCode;
+                    try
+                    {
+                        exitCode = ReadExitCode(process, systemProcess);
+                    }
+                    catch (Exception exception)
+                    {
+                        AppLogger.Log("yazi_exit_code_unavailable", exception);
+                        exitCode = 0;
+                    }
+
+                    Dispatcher.Invoke(() => HandleProcessExit(term, exitCode));
                 }
             }
             catch (Exception exception)
@@ -625,6 +640,132 @@ public partial class MainWindow : Window
                 }
             }
         });
+    }
+
+    private void HandleProcessExit(TermPTY term, int? exitCode = null)
+    {
+        if (_isClosing || !ReferenceEquals(_term, term))
+        {
+            return;
+        }
+
+        if (exitCode is null)
+        {
+            var process = term.Process;
+            if (process is null)
+            {
+                HandleUnexpectedExit(term);
+                return;
+            }
+
+            try
+            {
+                if (!process.HasExited)
+                {
+                    return;
+                }
+
+                exitCode = ReadExitCode(process);
+            }
+            catch (Exception exception)
+            {
+                AppLogger.Log("yazi_exit_code_read_failed", exception);
+                HandleUnexpectedExit(term);
+                return;
+            }
+        }
+
+        if (!YaziProcessExitPolicy.IsNormalExit(exitCode.Value))
+        {
+            HandleUnexpectedExit(term);
+            return;
+        }
+
+        _isClosing = true;
+        AppLogger.Log("yazi_normal_exit");
+        DisposeSession();
+        Close();
+        Application.Current.Shutdown();
+    }
+
+    private static System.Diagnostics.Process? TryGetSystemProcess(object process)
+    {
+        const BindingFlags InstanceMembers =
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        var processType = process.GetType();
+
+        try
+        {
+            var pidProperty = processType.GetProperty("Pid", InstanceMembers);
+            if (pidProperty?.GetValue(process) is int processId)
+            {
+                return System.Diagnostics.Process.GetProcessById(processId);
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            // Fall back to the backend-owned Process property.
+        }
+
+        try
+        {
+            var processProperty = processType.GetProperty("Process", InstanceMembers);
+            return processProperty?.GetValue(process) as System.Diagnostics.Process;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static int ReadExitCode(
+        object process,
+        System.Diagnostics.Process? systemProcess = null)
+    {
+        try
+        {
+            if (systemProcess is not null)
+            {
+                return systemProcess.ExitCode;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Fall back to the process identifier exposed by some backend versions.
+        }
+
+        const BindingFlags InstanceMembers =
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+        var processType = process.GetType();
+        var processProperty = processType.GetProperty("Process", InstanceMembers);
+
+        try
+        {
+            if (processProperty?.GetValue(process) is System.Diagnostics.Process currentProcess)
+            {
+                return currentProcess.ExitCode;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Fall back to the process identifier exposed by some backend versions.
+        }
+
+        var pidProperty = processType.GetProperty("Pid", InstanceMembers);
+        if (pidProperty?.GetValue(process) is int processId)
+        {
+            try
+            {
+                using var currentProcess = System.Diagnostics.Process.GetProcessById(processId);
+                return currentProcess.ExitCode;
+            }
+            catch (ArgumentException)
+            {
+                // The process can disappear before the PID lookup after WaitForExit.
+            }
+        }
+
+        throw new InvalidOperationException("The terminal process exit code is unavailable.");
     }
 
     private void HandleUnexpectedExit(TermPTY term)
