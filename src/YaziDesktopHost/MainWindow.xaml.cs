@@ -490,7 +490,7 @@ public partial class MainWindow : Window
         _terminal?.Focus();
     }
 
-    private void DisposeSession()
+    private void DisposeSession(bool processAlreadyExited = false)
     {
         if (_term is not null)
         {
@@ -507,8 +507,11 @@ public partial class MainWindow : Window
         _processMonitorCancellation = null;
         _processMonitorTask = null;
         _terminal?.DisconnectConPTYTerm();
-        _term?.CloseStdinToApp();
-        _term?.StopExternalTermOnly();
+        if (!processAlreadyExited)
+        {
+            _term?.CloseStdinToApp();
+            _term?.StopExternalTermOnly();
+        }
         _terminal = null;
         _term = null;
         TerminalHost.Children.Clear();
@@ -938,7 +941,7 @@ public partial class MainWindow : Window
 
         _isClosing = true;
         AppLogger.Log("yazi_normal_exit");
-        DisposeSession();
+        DisposeSession(processAlreadyExited: true);
         Close();
         Application.Current.Shutdown();
     }
