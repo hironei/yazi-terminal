@@ -42,6 +42,7 @@ var tests = new (string Name, Action Test)[]
     ("Yazi action tokenizer rejects unterminated quotes", YaziActionTokenizerRejectsUnterminatedQuotes),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
     ("host settings round trip and reject unsupported values", HostSettingsRoundTripAndRejectsUnsupportedValues),
+    ("Yazi exit policy distinguishes normal and abnormal exits", YaziExitPolicyDistinguishesNormalAndAbnormalExits),
     ("shell target prefers selected paths", ShellTargetPrefersSelectedPaths),
     ("shell target preserves multiple selection", ShellTargetPreservesMultipleSelection),
     ("shell target falls back to hovered path", ShellTargetFallsBackToHoveredPath),
@@ -842,6 +843,13 @@ static void BridgeEnvironmentScopeRestoresValues()
             Environment.SetEnvironmentVariable(name, value);
         }
     }
+}
+
+static void YaziExitPolicyDistinguishesNormalAndAbnormalExits()
+{
+    Assert(YaziProcessExitPolicy.IsNormalExit(0));
+    Assert(!YaziProcessExitPolicy.IsNormalExit(1));
+    Assert(!YaziProcessExitPolicy.IsNormalExit(-1));
 }
 
 static void ShellTargetPrefersSelectedPaths()
