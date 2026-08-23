@@ -82,6 +82,11 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Window_Activated(object? sender, EventArgs e)
+    {
+        QueueTerminalFocus();
+    }
+
     private void ApplyTheme(AppThemeMode mode)
     {
         _themeMode = mode;
@@ -265,7 +270,7 @@ public partial class MainWindow : Window
             _ = Dispatcher.BeginInvoke(
                 DispatcherPriority.Loaded,
                 new Action(AttachTerminalMessageHook));
-            _terminal.Focus();
+            QueueTerminalFocus();
         }
         catch (YaziExecutableNotFoundException)
         {
@@ -276,6 +281,24 @@ public partial class MainWindow : Window
             AppLogger.Log("yazi_start_failed", exception);
             ShowStartupError("Yazi could not be started. See the application log for details.");
         }
+    }
+
+    private void QueueTerminalFocus()
+    {
+        if (_isClosing || _isCommandPaletteOpen || _terminal is null)
+        {
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            new Action(() =>
+            {
+                if (!_isClosing && !_isCommandPaletteOpen)
+                {
+                    _terminal?.Focus();
+                }
+            }));
     }
 
     private void Window_Closing(object? sender, CancelEventArgs e)
