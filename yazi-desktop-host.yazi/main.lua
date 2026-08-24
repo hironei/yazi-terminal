@@ -36,10 +36,24 @@ local function trim(value)
 	return value:gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+local function unescape_double_quoted(value)
+	return (value:gsub("\\(.)", function(character)
+		return ({
+			["\\"] = "\\",
+			["\""] = "\"",
+			["b"] = "\b",
+			["f"] = "\f",
+			["n"] = "\n",
+			["r"] = "\r",
+			["t"] = "\t",
+		})[character] or "\\" .. character
+	end))
+end
+
 local function quoted_value(line, name)
 	local double_quoted = line:match("^" .. name .. "%s*=%s*\"(.*)\"%s*$")
 	if double_quoted then
-		return double_quoted
+		return unescape_double_quoted(double_quoted)
 	end
 	return line:match("^" .. name .. "%s*=%s*'(.*)'%s*$")
 end
@@ -47,7 +61,7 @@ end
 local function array_values(value)
 	local values = {}
 	for item in value:gmatch("\"([^\"]*)\"") do
-		table.insert(values, item)
+		table.insert(values, unescape_double_quoted(item))
 	end
 	if #values == 0 then
 		for item in value:gmatch("'([^']*)'") do
@@ -65,46 +79,60 @@ local function parse_keymap_file(path)
 
 	local commands = {}
 	local current
-	local in_prepend = false
+	local in_manager_keymap = false
 	local function save_current()
-		if current and current.run and current.run ~= "" then
+		if current and current.runs and #current.runs > 0 then
+			current.run = current.runs[1]
 			table.insert(commands, current)
 		end
 	end
 
 	for source_line in file:lines() do
 		local line = trim(source_line)
-		if line:match("^%[%[.*%.prepend_keymap%]%]") then
+		local section, keymap_position = line:match("^%[%[([%w_]+)%.([%w_]+)%]%]$")
+		if section and (keymap_position == "prepend_keymap" or keymap_position == "append_keymap") then
 			save_current()
-			current = {}
-			in_prepend = true
+			current = section == "mgr" and {} or nil
+			in_manager_keymap = section == "mgr"
 		elseif line:match("^%[%[") then
 			save_current()
 			current = nil
-			in_prepend = false
-		elseif in_prepend and current and line ~= "" and not line:match("^#") then
-			local key = quoted_value(line, "on")
-			if key then
-				current.key = key
-			else
-				local key_array = line:match("^on%s*=%s*%[([^%]]*)%]")
-				if key_array then
-					current.key = table.concat(array_values(key_array), " + ")
+			in_manager_keymap = false
+		elseif in_manager_keymap and current and line ~= "" and not line:match("^#") then
+			if current.pending_run_array then
+				current.pending_run_array = current.pending_run_array .. "\n" .. line
+				if line:find("]", 1, true) then
+					current.runs = array_values(current.pending_run_array)
+					current.pending_run_array = nil
 				end
-			end
-
-			local description = quoted_value(line, "desc")
-			if description then
-				current.description = description
-			end
-
-			local run = quoted_value(line, "run")
-			if run then
-				current.run = run
 			else
-				local run_array = line:match("^run%s*=%s*%[([^%]]*)%]")
-				if run_array then
-					current.run = array_values(run_array)[1]
+				local key = quoted_value(line, "on")
+				if key then
+					current.key = key
+				else
+					local key_array = line:match("^on%s*=%s*%[([^%]]*)%]")
+					if key_array then
+						current.key = table.concat(array_values(key_array), " + ")
+					end
+				end
+
+				local description = quoted_value(line, "desc")
+				if description then
+					current.description = description
+				end
+
+				local run = quoted_value(line, "run")
+				if run then
+					current.runs = { run }
+				else
+					local run_array = line:match("^run%s*=%s*(%[.*)$")
+					if run_array then
+						if run_array:find("]", 1, true) then
+							current.runs = array_values(run_array)
+						else
+							current.pending_run_array = run_array
+						end
+					end
 				end
 			end
 		end
@@ -139,9 +167,22 @@ local function json_commands(commands)
 	local size = 2
 	for _, command in ipairs(commands) do
 		local run = command.run or ""
-		if #run <= 4096 then
+		local runs = command.runs or {}
+		local valid_runs = #runs > 0 and #runs <= 32
+		for _, action in ipairs(runs) do
+			if action == "" or #action > 4096 then
+				valid_runs = false
+				break
+			end
+		end
+		if #run <= 4096 and valid_runs then
+			local run_items = {}
+			for _, action in ipairs(runs) do
+				table.insert(run_items, json_string(action))
+			end
 			local item = "{\"key\":" .. json_string(command.key or "")
 				.. ",\"run\":" .. json_string(run)
+				.. ",\"runs\":[" .. table.concat(run_items, ",") .. "]"
 				.. ",\"description\":" .. json_string(command.description or "") .. "}"
 			local separator = #encoded == 0 and 0 or 1
 			if size + separator + #item > 60000 or #encoded >= 256 then
@@ -266,4 +307,5 @@ end
 
 return {
 	setup = setup,
+	parse_keymap_file = parse_keymap_file,
 }

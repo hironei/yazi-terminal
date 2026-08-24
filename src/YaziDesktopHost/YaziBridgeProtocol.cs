@@ -29,7 +29,16 @@ public enum YaziBridgeAvailability
 
 public sealed record YaziBridgePath(YaziBridgePathKind Kind, string Value);
 
-public sealed record YaziBridgeCommand(string Key, string Run, string Description);
+public sealed record YaziBridgeCommand(
+    string Key,
+    string Run,
+    string Description,
+    IReadOnlyList<string>? Runs = null)
+{
+    public IReadOnlyList<string> ActionSequence => Runs ?? [Run];
+
+    public string DisplayRun => string.Join(" → ", ActionSequence);
+}
 
 public sealed record YaziBridgeEnvelope(
     string Protocol,
@@ -163,6 +172,7 @@ public sealed class YaziBridgeCommandCatalogParser
 {
     private const int MaxCommands = 512;
     private const int MaxCommandTextLength = 4096;
+    private const int MaxRunsPerCommand = 32;
 
     public IReadOnlyList<YaziBridgeCommand> Parse(JsonElement helloPayload)
     {
@@ -191,13 +201,14 @@ public sealed class YaziBridgeCommandCatalogParser
 
             var key = OptionalString(command, "key");
             var run = RequiredBoundedString(command, "run");
+            var runs = OptionalRunSequence(command, run);
             var description = OptionalString(command, "description") ?? string.Empty;
             if (description.Length > MaxCommandTextLength)
             {
                 throw new YaziBridgeProtocolException("Bridge command description is too long.");
             }
 
-            result.Add(new YaziBridgeCommand(key ?? string.Empty, run, description));
+            result.Add(new YaziBridgeCommand(key ?? string.Empty, run, description, runs));
         }
 
         return result;
@@ -227,6 +238,41 @@ public sealed class YaziBridgeCommandCatalogParser
         }
 
         return value;
+    }
+
+    private static IReadOnlyList<string>? OptionalRunSequence(JsonElement parent, string firstRun)
+    {
+        if (!parent.TryGetProperty("runs", out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.Array
+            || value.GetArrayLength() == 0
+            || value.GetArrayLength() > MaxRunsPerCommand)
+        {
+            throw new YaziBridgeProtocolException("Bridge command run sequence is invalid.");
+        }
+
+        var runs = new List<string>(value.GetArrayLength());
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(item.GetString())
+                || item.GetString()!.Length > MaxCommandTextLength)
+            {
+                throw new YaziBridgeProtocolException("Bridge command run sequence is invalid.");
+            }
+
+            runs.Add(item.GetString()!);
+        }
+
+        if (!string.Equals(runs[0], firstRun, StringComparison.Ordinal))
+        {
+            throw new YaziBridgeProtocolException("Bridge command run sequence does not match its first action.");
+        }
+
+        return runs;
     }
 }
 
