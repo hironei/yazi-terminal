@@ -422,6 +422,9 @@ public sealed class YaziBridgeStateReducer
     private readonly Guid _instanceId;
     private YaziBridgeState? _state;
     private bool _handshakeCompleted;
+    private bool _snapshotAccepted;
+    private bool _connectionRejected;
+    private ulong? _lastSequence;
 
     public YaziBridgeStateReducer(Guid instanceId)
     {
@@ -441,32 +444,38 @@ public sealed class YaziBridgeStateReducer
             throw new YaziBridgeProtocolException("Bridge instanceId does not match the reducer.");
         }
 
+        if (_connectionRejected || !AcceptSequence(message.Sequence))
+        {
+            return;
+        }
+
         switch (message.Kind)
         {
             case YaziBridgeMessageKind.Hello:
                 if (_handshakeCompleted)
                 {
-                    MarkUnavailable("duplicate-hello");
+                    RejectConnection("duplicate-hello");
                     return;
                 }
 
                 _handshakeCompleted = true;
                 return;
             case YaziBridgeMessageKind.Snapshot:
-                if (!_handshakeCompleted)
+                if (!_handshakeCompleted || _snapshotAccepted)
                 {
-                    MarkUnavailable("handshake-required");
+                    RejectConnection(_handshakeCompleted ? "duplicate-snapshot" : "handshake-required");
                     return;
                 }
 
                 try
                 {
                     _state = ParseSnapshot(message);
+                    _snapshotAccepted = true;
                     UnavailableReason = null;
                 }
                 catch (YaziBridgeProtocolException)
                 {
-                    MarkUnavailable("invalid-snapshot");
+                    RejectConnection("invalid-snapshot");
                     throw;
                 }
 
@@ -487,20 +496,19 @@ public sealed class YaziBridgeStateReducer
 
     public void MarkDisconnected()
     {
-        MarkUnavailable("disconnect");
+        _state = null;
+        _handshakeCompleted = false;
+        _snapshotAccepted = false;
+        _connectionRejected = false;
+        _lastSequence = null;
+        UnavailableReason = "disconnect";
     }
 
     private void ApplyStateUpdate(YaziBridgeEnvelope message)
     {
         if (_state is null || _state.Availability != YaziBridgeAvailability.Available)
         {
-            MarkUnavailable("snapshot-required");
-            return;
-        }
-
-        if (message.Sequence != _state.Sequence + 1)
-        {
-            MarkUnavailable("sequence-gap");
+            RejectConnection("snapshot-required");
             return;
         }
 
@@ -508,7 +516,7 @@ public sealed class YaziBridgeStateReducer
         var present = RequiredStringArray(payload, "present");
         if (present.Count == 0)
         {
-            MarkUnavailable("empty-state-update");
+            RejectConnection("empty-state-update");
             return;
         }
 
@@ -534,7 +542,7 @@ public sealed class YaziBridgeStateReducer
                     selected = ParsePathArray(RequiredProperty(payload, "selected"), "selected");
                     break;
                 default:
-                    MarkUnavailable("unknown-state-field");
+                    RejectConnection("unknown-state-field");
                     return;
             }
         }
@@ -566,8 +574,26 @@ public sealed class YaziBridgeStateReducer
     private void MarkUnavailable(string reason)
     {
         _state = null;
-        _handshakeCompleted = false;
         UnavailableReason = reason;
+    }
+
+    private bool AcceptSequence(ulong sequence)
+    {
+        if (_lastSequence is ulong previous
+            && (previous == ulong.MaxValue || sequence != previous + 1))
+        {
+            RejectConnection("sequence-gap");
+            return false;
+        }
+
+        _lastSequence = sequence;
+        return true;
+    }
+
+    private void RejectConnection(string reason)
+    {
+        MarkUnavailable(reason);
+        _connectionRejected = true;
     }
 
     private static YaziBridgePath ParsePath(JsonElement value, string name)

@@ -91,10 +91,13 @@ Every message has this envelope:
 }
 ```
 
-`sequence` is a non-negative, strictly increasing number within an instance.
-The first accepted state is a `snapshot`. A sequence gap, duplicate, or
-out-of-order update makes the reducer request or await a new snapshot rather
-than guessing the missing state.
+`sequence` is a non-negative, strictly increasing number within one pipe
+connection. The first accepted state is a `snapshot` after `hello`; every later
+message must use the next sequence value. A sequence gap, duplicate, or
+out-of-order message (including a duplicate, decreasing, or premature
+`snapshot`) makes the reducer unavailable for that connection rather than
+guessing the missing state. A replacement connection starts a new sequence, so
+`hello: 0` followed by `snapshot: 1` is valid after reconnect.
 
 The state payload uses explicit path values:
 
