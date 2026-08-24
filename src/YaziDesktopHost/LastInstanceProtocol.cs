@@ -7,7 +7,15 @@ namespace YaziDesktopHost;
 
 public sealed record LastInstanceEndpoint(string PipeName);
 
-public sealed record LastInstanceControlRequest(string Path);
+public enum LastInstanceControlCommand
+{
+    ChangeDirectory,
+    OpenFile,
+}
+
+public sealed record LastInstanceControlRequest(
+    string Path,
+    LastInstanceControlCommand Command = LastInstanceControlCommand.ChangeDirectory);
 
 public static class LastInstanceControlProtocol
 {
@@ -19,13 +27,20 @@ public static class LastInstanceControlProtocol
         ArgumentNullException.ThrowIfNull(request);
         if (string.IsNullOrWhiteSpace(request.Path))
         {
-            throw new ArgumentException("The directory path must not be empty.", nameof(request));
+            throw new ArgumentException("The target path must not be empty.", nameof(request));
         }
+
+        var command = request.Command switch
+        {
+            LastInstanceControlCommand.ChangeDirectory => "cd",
+            LastInstanceControlCommand.OpenFile => "open",
+            _ => throw new ArgumentOutOfRangeException(nameof(request)),
+        };
 
         return JsonSerializer.Serialize(new
         {
             protocol = SupportedProtocol,
-            command = "cd",
+            command,
             path = request.Path,
         });
     }
@@ -47,7 +62,6 @@ public static class LastInstanceControlProtocol
                 || !TryGetString(root, "protocol", out var protocol)
                 || !string.Equals(protocol, SupportedProtocol, StringComparison.Ordinal)
                 || !TryGetString(root, "command", out var command)
-                || !string.Equals(command, "cd", StringComparison.Ordinal)
                 || !TryGetString(root, "path", out var path)
                 || !Path.IsPathFullyQualified(path))
             {
@@ -59,7 +73,18 @@ public static class LastInstanceControlProtocol
                 return false;
             }
 
-            request = new LastInstanceControlRequest(path);
+            var requestCommand = command switch
+            {
+                "cd" => LastInstanceControlCommand.ChangeDirectory,
+                "open" => LastInstanceControlCommand.OpenFile,
+                _ => (LastInstanceControlCommand?)null,
+            };
+            if (requestCommand is null)
+            {
+                return false;
+            }
+
+            request = new LastInstanceControlRequest(path, requestCommand.Value);
             return true;
         }
         catch (JsonException)
@@ -409,7 +434,18 @@ public static class LastInstanceClient
         string directory,
         TimeSpan timeout)
     {
-        return TrySendAsync(endpoint, directory, timeout).GetAwaiter().GetResult();
+        return TrySendAsync(
+            endpoint,
+            new LastInstanceControlRequest(directory),
+            timeout).GetAwaiter().GetResult();
+    }
+
+    public static bool TrySend(
+        LastInstanceEndpoint endpoint,
+        LastInstanceControlRequest request,
+        TimeSpan timeout)
+    {
+        return TrySendAsync(endpoint, request, timeout).GetAwaiter().GetResult();
     }
 
     public static async Task<bool> TrySendAsync(
@@ -417,10 +453,22 @@ public static class LastInstanceClient
         string directory,
         TimeSpan timeout)
     {
+        return await TrySendAsync(
+            endpoint,
+            new LastInstanceControlRequest(directory),
+            timeout).ConfigureAwait(false);
+    }
+
+    public static async Task<bool> TrySendAsync(
+        LastInstanceEndpoint endpoint,
+        LastInstanceControlRequest request,
+        TimeSpan timeout)
+    {
         try
         {
             ArgumentNullException.ThrowIfNull(endpoint);
-            ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+            ArgumentNullException.ThrowIfNull(request);
+            ArgumentException.ThrowIfNullOrWhiteSpace(request.Path);
             if (!LastInstanceRegistry.IsControlPipeName(endpoint.PipeName)
                 || timeout <= TimeSpan.Zero)
             {
@@ -435,10 +483,10 @@ public static class LastInstanceClient
                 PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             await client.ConnectAsync(timeoutCancellation.Token).ConfigureAwait(false);
 
-            var request = LastInstanceControlProtocol.Serialize(new LastInstanceControlRequest(directory));
+            var frame = LastInstanceControlProtocol.Serialize(request);
             await LastInstanceFrame.WriteAsync(
                 client,
-                request,
+                frame,
                 LastInstanceControlProtocol.MaxFrameBytes,
                 timeoutCancellation.Token).ConfigureAwait(false);
             var acknowledgement = await LastInstanceFrame.ReadAsync(
@@ -491,7 +539,7 @@ public sealed class LastInstanceControlServer : IDisposable
 
     public string PipeName { get; }
 
-    public event Func<string, CancellationToken, Task<bool>>? DirectoryRequested;
+    public event Func<LastInstanceControlRequest, CancellationToken, Task<bool>>? RequestReceived;
 
     public bool Start()
     {
@@ -638,10 +686,10 @@ public sealed class LastInstanceControlServer : IDisposable
         var accepted = false;
         try
         {
-            var handler = DirectoryRequested;
+            var handler = RequestReceived;
             if (handler is not null)
             {
-                accepted = await handler(request!.Path, requestTimeout.Token).ConfigureAwait(false);
+                accepted = await handler(request!, requestTimeout.Token).ConfigureAwait(false);
             }
         }
         catch

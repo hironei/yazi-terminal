@@ -2,7 +2,10 @@ using System.IO;
 
 namespace YaziDesktopHost;
 
-public sealed record CommandLineOptions(bool UseLastInstance, string InitialDirectory)
+public sealed record CommandLineOptions(
+    bool UseLastInstance,
+    string InitialDirectory,
+    string? FilePath = null)
 {
     public const string LastInstanceOption = "--last-instance";
 
@@ -14,7 +17,7 @@ public sealed record CommandLineOptions(bool UseLastInstance, string InitialDire
         ArgumentException.ThrowIfNullOrWhiteSpace(currentDirectory);
 
         var useLastInstance = false;
-        string? directory = null;
+        string? path = null;
 
         for (var index = 0; index < args.Count; index++)
         {
@@ -35,28 +38,39 @@ public sealed record CommandLineOptions(bool UseLastInstance, string InitialDire
                 throw new CommandLineParseException($"Unknown option: {argument}");
             }
 
-            if (directory is not null)
+            if (path is not null)
             {
-                throw new CommandLineParseException("Only one directory argument is supported.");
+                throw new CommandLineParseException("Only one path argument is supported.");
             }
 
-            directory = argument;
+            path = argument;
         }
 
-        string resolvedDirectory;
+        string resolvedPath;
         try
         {
-            resolvedDirectory = Path.GetFullPath(directory ?? currentDirectory);
+            resolvedPath = Path.GetFullPath(path ?? currentDirectory);
         }
         catch (Exception exception) when (
             exception is ArgumentException
             or IOException
             or NotSupportedException)
         {
-            throw new CommandLineParseException("The directory argument is not a valid path.", exception);
+            throw new CommandLineParseException("The path argument is not a valid path.", exception);
         }
 
-        return new CommandLineOptions(useLastInstance, resolvedDirectory);
+        if (path is not null && File.Exists(resolvedPath))
+        {
+            var parentDirectory = Path.GetDirectoryName(resolvedPath);
+            if (string.IsNullOrWhiteSpace(parentDirectory))
+            {
+                throw new CommandLineParseException("The file argument has no parent directory.");
+            }
+
+            return new CommandLineOptions(useLastInstance, parentDirectory, resolvedPath);
+        }
+
+        return new CommandLineOptions(useLastInstance, resolvedPath, null);
     }
 }
 

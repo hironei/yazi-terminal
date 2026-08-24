@@ -35,14 +35,21 @@ public partial class App : Application
             var registry = new LastInstanceRegistry();
             if (registry.TryRead(out var endpoint)
                 && endpoint is not null
-                && LastInstanceClient.TrySend(endpoint, options.InitialDirectory, TimeSpan.FromSeconds(2)))
+                && LastInstanceClient.TrySend(
+                    endpoint,
+                    new LastInstanceControlRequest(
+                        options.FilePath ?? options.InitialDirectory,
+                        options.FilePath is null
+                            ? LastInstanceControlCommand.ChangeDirectory
+                            : LastInstanceControlCommand.OpenFile),
+                    TimeSpan.FromSeconds(2)))
             {
                 Shutdown();
                 return;
             }
         }
 
-        var window = new MainWindow(options.InitialDirectory);
+        var window = new MainWindow(options.InitialDirectory, options.FilePath);
         MainWindow = window;
         window.Show();
     }
