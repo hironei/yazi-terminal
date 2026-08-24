@@ -84,6 +84,12 @@ flavor so the embedded terminal can match a normal true-color Yazi terminal.
 The host's own visual settings are stored as JSON below
 `%LOCALAPPDATA%\YaziTerminal\settings.json`; only the selected theme,
 supported font family, and font size are persisted.
+The supported families are `MS Gothic`, `Consolas`, `Cascadia Mono`, and
+`Cascadia Code`; the supported sizes are `12`, `14`, `16`, `18`, and `20`.
+`MS Gothic` and `14` are the defaults. When either persisted font property is
+unsupported, loading falls back for that property only and logs
+`settings_font_family_fallback` or `settings_font_size_fallback` in the host
+log, respectively.
 
 The palette applies the current theme colors directly to its own resources at
 construction time; it does not share mutable resource dictionaries with the

@@ -41,7 +41,9 @@ settings.
     families and sizes. It opens the persisted `settings.json` through Yazi's
     configured opener/editor. The selected theme, font family, and font size
     are restored on the next host launch. Valid changes saved while the host
-    is running are applied immediately.
+    is running are applied immediately. Supported font families are `MS Gothic`,
+    `Consolas`, `Cascadia Mono`, and `Cascadia Code`; supported font sizes are
+    `12`, `14`, `16`, `18`, and `20`. The defaults are `MS Gothic` and `14`.
 
 ## Non-functional requirements
 
@@ -75,6 +77,9 @@ settings.
 - A missing or unsupported Yazi flavor value does not crash the host. The
   documented built-in fallback remains active for values the host does not
   consume.
+- Missing font properties retain their defaults, and unsupported persisted font
+  properties independently fall back to their documented defaults. The host
+  logs a font-specific fallback event so the user can correct the file.
 - The host passes action arguments with `ProcessStartInfo.ArgumentList`, so
   command text is not evaluated by a host shell. The user-selected Yazi action
   may still ask Yazi to run its own `shell` action.
