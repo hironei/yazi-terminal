@@ -21,6 +21,15 @@ setup, validated capabilities, limitations, and license.
 The archive contains `YaziTerminal.exe`, the required native terminal files,
 the MIT `LICENSE`, this documentation, and the Yazi bridge plugin.
 
+### Binary release status
+
+New binary archives are blocked while the redistribution terms for the
+`CI.Microsoft.Terminal.Wpf` repackage remain unverified. This is not a legal
+conclusion; see [the third-party notices](THIRD-PARTY-NOTICES.md) for the
+package evidence and the v0.1.8 remediation policy. Do not treat the existing
+v0.1.8 asset as remediated until an authorized maintainer records the missing
+evidence and decides whether to replace or withdraw it.
+
 ## Developer setup
 
 The following commands are for building and testing from source. They are not

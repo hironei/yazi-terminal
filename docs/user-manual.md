@@ -574,7 +574,11 @@ Yazi Terminal is released under the [MIT License](../LICENSE).
 
 Third-party dependencies are distributed under their own terms. In particular,
 `EasyWindowsTerminalControl` uses the third-party NuGet package
-`CI.Microsoft.Terminal.Wpf`. The v1 design permits that dependency with a
-recorded supply-chain and maintenance risk; binary distributions must include
-the applicable Microsoft Terminal `LICENSE` and `NOTICE` handling after it has
-been confirmed. See the [dependency decision in the design document](history/design-yazi-windows-gui-frontend.md#dependency-licensing-and-supply-chain-decision).
+`CI.Microsoft.Terminal.Wpf`. The current repackage has no package-local
+license, notice, or repository provenance that confirms binary redistribution.
+Consequently, new binary releases are blocked; this is an engineering release
+gate, not a legal conclusion. See the repository's
+[third-party notices](../THIRD-PARTY-NOTICES.md) for the exact package evidence
+and the existing v0.1.8 remediation policy. An authorized maintainer must
+record the missing evidence and decide whether to replace or withdraw that
+asset before it can be considered remediated.

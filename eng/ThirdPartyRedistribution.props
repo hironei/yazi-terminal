@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Change only after an authorized evidence and notice review. -->
+    <ThirdPartyRedistributionState>blocked</ThirdPartyRedistributionState>
+  </PropertyGroup>
+</Project>

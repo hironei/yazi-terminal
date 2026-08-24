@@ -61,9 +61,10 @@ The following gates remain open before claiming a distributable support range:
 5. Record the supported Yazi/`ya` version policy and test at least one upgrade
    and one rejection path for an unsupported pair.
 6. Before binary distribution, validate the Microsoft Terminal MIT `LICENSE` and
-   `NOTICE` handling, native asset redistribution, and installation layout. The
-   v1 NuGet dependency is allowed with a recorded supply-chain and maintenance
-   risk; this is not a v1 license blocker.
+   `NOTICE` handling, native asset redistribution, and installation layout.
+   Issue #21 makes the unresolved `CI.Microsoft.Terminal.Wpf` repackage a
+   release blocker: no new binary archive is eligible until version-specific
+   redistribution evidence and required notices are recorded.
 
 Until these gates are closed, the support statement is limited to the current
 Windows `win-x64` fixture and the exact Yazi/`ya` pair recorded above.
@@ -74,19 +75,20 @@ The fixed package metadata was inspected from the local NuGet cache:
 
 | Package | License evidence | Distribution status |
 | --- | --- | --- |
-| `EasyWindowsTerminalControl` `1.0.38` | nuspec license expression `MIT`; upstream commit `0741a4b8853c47bcac4412d005ed4ae1d96d2c13` | Evidence recorded; verify notice obligations in the final package. |
-| `Microsoft.Windows.Console.ConPTY` `1.24.260710001` | nuspec license expression `MIT`; Microsoft Terminal project URL | Evidence recorded; verify notice obligations in the final package. |
-| `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | Local nuspec has no license expression, license URL, license file, or repository URL; it records only repackage commit `9ae724aa5b080aafbeea2bbf88db630b182cc802`. The [NuGet page](https://www.nuget.org/packages/CI.Microsoft.Terminal.Wpf/1.25.260303002) identifies owner `CI2NugetRepackageTeam` but supplies no license terms. | **V1 ALLOWED WITH RISK**; binary distribution still requires `LICENSE`/`NOTICE` confirmation. |
+| `EasyWindowsTerminalControl` `1.0.38` | nuspec license expression `MIT`; upstream commit `0741a4b8853c47bcac4412d005ed4ae1d96d2c13` | Declared package terms; the MIT notice is included in a release-eligible archive. |
+| `Microsoft.Windows.Console.ConPTY` `1.24.260710001` | nuspec license expression `MIT`; Microsoft Terminal project URL | Declared package terms; the MIT notice is included in a release-eligible archive. |
+| `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | Local nuspec has no license expression, license URL, license file, or repository URL; it records only repackage commit `9ae724aa5b080aafbeea2bbf88db630b182cc802`. The [NuGet page](https://www.nuget.org/packages/CI.Microsoft.Terminal.Wpf/1.25.260303002) identifies owner `CI2NugetRepackageTeam` but supplies no license terms. | **BLOCKED**; no new binary archive may be published until version-specific redistribution terms and required notices are confirmed. |
 
 The Microsoft Terminal repository and WPF source identify the upstream code as
 MIT, but that does not by itself establish the license chain for this separate
 CI repackage or its included native binaries. NuGet cache signatures and
-package metadata are not a substitute for a legal redistribution review. The
-v1 design therefore permits the NuGet dependency while recording supply-chain
-and maintenance risk; before binary distribution, confirm the Microsoft
-Terminal `LICENSE` and `NOTICE` handling. See the [upstream repository](https://github.com/microsoft/terminal)
+package metadata are not a substitute for a legal redistribution review.
+Issue #21 therefore blocks new binary distribution while retaining the
+dependency only for source/build work; obtain the package publisher's
+version-specific evidence and the exact required `LICENSE`/`NOTICE` files
+before lifting the gate. See the [upstream repository](https://github.com/microsoft/terminal)
 and [WPF source license header](https://github.com/microsoft/terminal/blob/main/src/cascadia/WpfTerminalControl/TerminalControl.xaml.cs)
-for the upstream evidence.
+for upstream provenance only.
 
 ## Explicit non-claims
 
@@ -107,6 +109,5 @@ for the upstream evidence.
   the higher embedded Windows Terminal candidate floor.
 - The [NuGet package page](https://www.nuget.org/packages/CI.Microsoft.Terminal.Wpf/1.25.260303002)
   identifies the package owner as `CI2NugetRepackageTeam`, but does not provide
-  license terms for the repackage. This is recorded as a v1 supply-chain and
-  maintenance risk; binary distribution still requires `LICENSE`/`NOTICE`
-  confirmation.
+  license terms for the repackage. This is the Issue #21 binary-release
+  blocker, not a confirmation of redistribution rights.
