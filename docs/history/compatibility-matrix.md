@@ -2,32 +2,52 @@
 
 ## Status
 
-This document records the current validated fixture. It is not a promise that
-every Windows version, CPU architecture, or Yazi release is supported.
+This document separates current release/source observations from a historical
+manual fixture. It is not a promise that every Windows version, CPU
+architecture, or Yazi release is supported.
 
-## Current validated fixture
+## Current release and source observations
+
+The following values were directly observed for the public v0.1.8 archive and
+the matching current source checkout. The exact SHA-256, complete ZIP entry
+list, executable version, source commit, and bridge plugin blob are in
+[`compatibility-evidence/v0.1.8.json`](compatibility-evidence/v0.1.8.json).
+
+| Area | Observed value | Status | Boundary |
+| --- | --- | --- | --- |
+| Release artifact | `YaziTerminal-v0.1.8-win-x64.zip`, SHA-256 `0A7B989316A837451A1EF8064BDDB43D96A7798E802D3F7209897917800FB38E`, 16 entries | OBSERVED | This is inspection of the published asset, not a new publish run. |
+| Executable | `YaziTerminal.exe`, file version `0.1.8`, product version `0.1.8+c65ff9eef68ef1af3a338587ca3a1ceb67836de5` | OBSERVED | The archive uses the current assembly name, unlike the older historical publish record. |
+| Current source | commit `c65ff9eef68ef1af3a338587ca3a1ceb67836de5` | OBSERVED | Evidence must be regenerated when source changes. |
+| Bridge plugin | `main.lua` Git blob `d7db80883342fd04296d090c136980cdf044e7dc`; SHA-256 `D8CEBB2514D07596EE7D58D293BC2C19D85A48BC192E6206E69CBD4416C7C082` | OBSERVED | The v0.1.8 archive plugin bytes match this source revision. |
+| Plugin command catalog/reconnect source | `hello` sends `json_commands(get_all_commands())`; reconnect loop resets sequence and retries | STATIC PASS | Lua syntax/source inspection only; not a live Yazi fixture. |
+| Host bridge protocol | parser, command catalog, and reconnect executable tests | AUTOMATED PASS | Named-pipe host tests do not execute Yazi/Lua. |
+| Live Yazi bridge/catalog/reconnect | Current plugin with real Yazi | NOT RUN | Local Yazi/`ya` is 26.8.15; the historical live fixture used 26.5.6. |
+| Release `win-x64` publish | New current publish artifact | NOT RUN | Do not bypass the Issue #21 fail-closed redistribution gate to manufacture an artifact. |
+
+## Historical validated fixture
 
 | Area | Validated value | Status | Boundary |
 | --- | --- | --- | --- |
-| Windows OS | OS version/build `10.0.26200` | PASS | Current fixture only; Windows 10 2004/build `19041` is the minimum candidate floor for the embedded Windows Terminal path, pending a packaged-host test. |
-| Runtime architecture | `win-x64`, AMD64 | PASS | x86 and ARM64 are explicitly excluded because the selected Easy backend is x64-only. |
-| .NET SDK | `10.0.400` | PASS | The project targets `net10.0-windows`; no older SDK is claimed. |
-| .NET runtime | `10.0.11`, Windows Desktop runtime | PASS | Framework-dependent versus self-contained distribution remains a release decision. |
-| Yazi | `26.5.6`, revision `aa52643` | PASS | This exact version is the validated fixture; no compatibility range is claimed. |
-| `ya` | `26.5.6`, revision `aa52643` | PASS | The bridge requires the paired Yazi/`ya` fixture. |
-| Bridge protocol | `yazi-desktop-host/1` | PASS | Messages are instance-bound and use the Phase 2 framed sideband transport. |
-| Bridge plugin | Repository revision `409cd5c2bc9298ee040fc2156ee86a0a2970fc12`; `main.lua` SHA-1 `1f3114030654b21ee49d23f46833519e7d62b325` | PASS | The plugin was tested through a temporary Yazi configuration. |
-| Terminal host | `EasyWindowsTerminalControl` `1.0.38` | PASS | Selected for the current implementation; production packaging remains gated. |
-| Windows Terminal dependency | `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | PASS | The product targets the package's `win-x64` native assets; x86 and ARM64 are excluded. |
-| ConPTY dependency | `Microsoft.Windows.Console.ConPTY` `1.24.260710001` | PASS | The package metadata declares MIT and describes Windows `10.0.17763.0` or newer; this is not yet the product minimum. |
-| Native ConPTY assets | `conpty.dll` for `win-x64` | PASS | The package's x86/ARM64 assets are not product targets. |
+| Windows OS | OS version/build `10.0.26200` | HISTORICAL PASS | Historical fixture only; Windows 10 2004/build `19041` is the minimum candidate floor for the embedded Windows Terminal path, pending a packaged-host test. |
+| Runtime architecture | `win-x64`, AMD64 | HISTORICAL PASS | x86 and ARM64 are explicitly excluded because the selected Easy backend is x64-only. |
+| .NET SDK | `10.0.400` | HISTORICAL PASS | The project targets `net10.0-windows`; no older SDK is claimed. |
+| .NET runtime | `10.0.11`, Windows Desktop runtime | HISTORICAL PASS | Framework-dependent versus self-contained distribution remains a release decision. |
+| Yazi | `26.5.6`, revision `aa52643` | HISTORICAL PASS | This exact version is the validated fixture; no compatibility range is claimed. |
+| `ya` | `26.5.6`, revision `aa52643` | HISTORICAL PASS | The bridge requires the paired Yazi/`ya` fixture. |
+| Bridge protocol | `yazi-desktop-host/1` | HISTORICAL PASS | Messages are instance-bound and use the Phase 2 framed sideband transport. |
+| Bridge plugin | Repository revision `409cd5c2bc9298ee040fc2156ee86a0a2970fc12`; `main.lua` SHA-1 `1f3114030654b21ee49d23f46833519e7d62b325` | HISTORICAL PASS | The plugin was tested through a temporary Yazi configuration; it is not the current plugin revision. |
+| Terminal host | `EasyWindowsTerminalControl` `1.0.38` | HISTORICAL PASS | Selected for the historical implementation; production packaging remains gated. |
+| Windows Terminal dependency | `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | HISTORICAL PASS | The product targets the package's `win-x64` native assets; x86 and ARM64 are excluded. |
+| ConPTY dependency | `Microsoft.Windows.Console.ConPTY` `1.24.260710001` | HISTORICAL PASS | The package metadata declares MIT and describes Windows `10.0.17763.0` or newer; this is not yet the product minimum. |
+| Native ConPTY assets | `conpty.dll` for `win-x64` | HISTORICAL PASS | The package's x86/ARM64 assets are not product targets. |
 
-The Release framework-dependent `win-x64` publish also passed with
+The historical framework-dependent `win-x64` publish passed with
 `PublishReadyToRun=false` after restoring with the `win-x64` RID. The publish
 directory contained `YaziDesktopHost.exe`,
 `EasyWindowsTerminalControl.dll`, `Microsoft.Terminal.Control.dll`, and
-`conpty.dll`. This proves package composition for the current x64 fixture; it
-does not prove that the packaged host starts successfully on another machine.
+`conpty.dll`. This proves package composition for the historical x64 fixture; it
+does not prove current artifact composition or that a packaged host starts on
+another machine.
 
 The project now declares `PlatformTarget=AnyCPU` and the supported
 `RuntimeIdentifiers` `win-x64`. An x86 self-contained startup probe was also
@@ -36,7 +56,7 @@ the x86 host (`PE machine 0x014C`) cannot load the x64
 `EasyWindowsTerminalControl.dll` (`PE machine 0x8664`). This is why x86 and
 ARM64 are excluded from the product target.
 
-## Manual capability result on the current fixture
+## Historical manual capability result
 
 The Windows run passed real Yazi launch, VT/alternate-screen rendering, 24-bit
 color fixture output, CJK, keyboard, IME composition and commit, xterm mouse
@@ -65,8 +85,18 @@ The following gates remain open before claiming a distributable support range:
    v1 NuGet dependency is allowed with a recorded supply-chain and maintenance
    risk; this is not a v1 license blocker.
 
-Until these gates are closed, the support statement is limited to the current
-Windows `win-x64` fixture and the exact Yazi/`ya` pair recorded above.
+Until these gates are closed, the support statement is limited to the
+historical Windows `win-x64` fixture and its exact Yazi/`ya` pair. The current
+release/source observations above do not expand that support statement.
+
+## Updating release evidence
+
+For each published release, download its ZIP to a temporary directory and run
+the updater and validator described in
+[`design-issue29-compatibility-evidence.md`](design-issue29-compatibility-evidence.md).
+The updater records the complete archive listing and refuses to bind a release
+to a checkout whose bridge plugin bytes differ. Archive inspection does not
+replace a live Yazi fixture or the Issue #21 binary-release gate.
 
 ## Dependency license evidence
 
