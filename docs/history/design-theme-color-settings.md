@@ -1,6 +1,6 @@
 # Design: Configurable Light/Dark Theme Colors
 
-Issue: pending GitHub authentication recovery
+Issue: #18
 
 ## Configuration boundary
 
