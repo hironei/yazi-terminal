@@ -60,12 +60,13 @@ then from `PATH`.
 ## WPF/Yazi lifecycle
 
 The control server starts before publishing its endpoint and runs until window
-shutdown. Directory requests are dispatched on the WPF thread and serialized so
-concurrent requests cannot reorder `ya` operations. A request received while
+shutdown. Path requests are dispatched on the WPF thread and serialized as
+complete transactions so concurrent requests cannot reorder `ya` operations or
+split a file `reveal → open` pair. A request received while
 the dispatcher is shutting down, or before Yazi and its paired `ya.exe` are
 processable, receives a negative acknowledgement and therefore follows the
 normal new-window fallback. Accepted requests activate and restore the window
-before running the Yazi directory action on the UI lifecycle.
+before running the Yazi path transaction on the UI lifecycle.
 
 The existing bridge environment and state session are unchanged. The random
 numeric Yazi client ID is retained by the host so the official `ya emit-to`
