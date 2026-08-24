@@ -65,7 +65,9 @@ The adapter uses the classic Shell sequence:
 The owner HWND is the WPF window. The call is synchronous on the UI/STA thread
 because Shell extensions may display UI and require the owner message loop.
 The adapter forwards the standard owner-draw and submenu messages to
-`IContextMenu2`/`IContextMenu3` while the menu is open.
+`IContextMenu2`/`IContextMenu3` while the menu is open. When `IContextMenu3`
+handles a message successfully, the host returns its `HandleMenuMsg2` LRESULT
+to the WPF message hook; it must not replace that result with zero.
 
 ## Acceptance criteria
 
@@ -78,6 +80,9 @@ The adapter forwards the standard owner-draw and submenu messages to
   hovered item when selection exists.
 - A Shell HRESULT/COM exception produces a bounded failure result and a
   category log, without terminating the host or bridge.
+- A fake message-forwarding seam verifies that a successful
+  `IContextMenu3.HandleMenuMsg2` call both marks the WPF message handled and
+  propagates its LRESULT, while a failing HRESULT remains unhandled.
 - Cross-parent multi-selection and third-party extension behavior are reported
   as manual compatibility results, not claimed from headless tests.
 

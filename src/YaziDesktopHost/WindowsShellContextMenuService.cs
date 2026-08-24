@@ -13,6 +13,46 @@ public enum WindowsShellContextMenuResult
     Failed,
 }
 
+internal interface IShellContextMenuMessageHandler
+{
+    bool TryHandleMenuMsg2(
+        uint message,
+        IntPtr wParam,
+        IntPtr lParam,
+        out int hResult,
+        out IntPtr result);
+
+    bool TryHandleMenuMsg(
+        uint message,
+        IntPtr wParam,
+        IntPtr lParam,
+        out int hResult);
+}
+
+internal static class ShellContextMenuMessageForwarder
+{
+    internal static IntPtr Forward(
+        IShellContextMenuMessageHandler contextMenu,
+        uint message,
+        IntPtr wParam,
+        IntPtr lParam,
+        ref bool handled)
+    {
+        if (contextMenu.TryHandleMenuMsg2(message, wParam, lParam, out var hResult, out var result))
+        {
+            handled = hResult >= 0;
+            return handled ? result : IntPtr.Zero;
+        }
+
+        if (contextMenu.TryHandleMenuMsg(message, wParam, lParam, out hResult))
+        {
+            handled = hResult >= 0;
+        }
+
+        return IntPtr.Zero;
+    }
+}
+
 public sealed class WindowsShellContextMenuService
 {
     private const uint CommandFirst = 1;
@@ -186,7 +226,7 @@ public sealed class WindowsShellContextMenuService
                 {
                     if (message is WmInitMenuPopup or WmMeasureItem or WmDrawItem or WmMenuChar)
                     {
-                        ForwardMenuMessage(contextMenu, (uint)message, wParam, lParam, ref handled);
+                        return ForwardMenuMessage(contextMenu, (uint)message, wParam, lParam, ref handled);
                     }
 
                     return IntPtr.Zero;
@@ -225,24 +265,53 @@ public sealed class WindowsShellContextMenuService
         }
     }
 
-    private static void ForwardMenuMessage(
+    private static IntPtr ForwardMenuMessage(
         IContextMenu contextMenu,
         uint message,
         IntPtr wParam,
         IntPtr lParam,
-        ref bool handled)
+        ref bool handled) =>
+        ShellContextMenuMessageForwarder.Forward(
+            new ContextMenuMessageHandler(contextMenu),
+            message,
+            wParam,
+            lParam,
+            ref handled);
+
+    private sealed class ContextMenuMessageHandler(IContextMenu contextMenu) : IShellContextMenuMessageHandler
     {
-        if (contextMenu is IContextMenu3 contextMenu3)
+        public bool TryHandleMenuMsg2(
+            uint message,
+            IntPtr wParam,
+            IntPtr lParam,
+            out int hResult,
+            out IntPtr result)
         {
-            var hr = contextMenu3.HandleMenuMsg2(message, wParam, lParam, out _);
-            handled = hr >= 0;
-            return;
+            if (contextMenu is IContextMenu3 contextMenu3)
+            {
+                hResult = contextMenu3.HandleMenuMsg2(message, wParam, lParam, out result);
+                return true;
+            }
+
+            hResult = 0;
+            result = IntPtr.Zero;
+            return false;
         }
 
-        if (contextMenu is IContextMenu2 contextMenu2)
+        public bool TryHandleMenuMsg(
+            uint message,
+            IntPtr wParam,
+            IntPtr lParam,
+            out int hResult)
         {
-            var hr = contextMenu2.HandleMenuMsg(message, wParam, lParam);
-            handled = hr >= 0;
+            if (contextMenu is IContextMenu2 contextMenu2)
+            {
+                hResult = contextMenu2.HandleMenuMsg(message, wParam, lParam);
+                return true;
+            }
+
+            hResult = 0;
+            return false;
         }
     }
 

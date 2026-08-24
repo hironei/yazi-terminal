@@ -54,6 +54,8 @@ var tests = new (string Name, Action Test)[]
     ("shell target resolves current directory", ShellTargetResolvesCurrentDirectory),
     ("shell target rejects unavailable, URLs, and empty state", ShellTargetRejectsUnavailableUrlsAndEmptyState),
     ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
+    ("shell context IContextMenu3 forwards LRESULT", ShellContextMenu3ForwardsLresult),
+    ("shell context IContextMenu3 failure remains unhandled", ShellContextMenu3FailureRemainsUnhandled),
     ("command palette filters theme commands", CommandPaletteFiltersThemeCommands),
     ("command palette includes Yazi commands", CommandPaletteIncludesYaziCommands),
     ("Yazi theme loader reads the selected flavor", YaziThemeLoaderReadsSelectedFlavor),
@@ -1063,6 +1065,56 @@ static void ShellContextComInterfacesPreserveNativeVtableOrder()
         "HandleMenuMsg2");
 }
 
+static void ShellContextMenu3ForwardsLresult()
+{
+    var expected = new IntPtr(0x1234);
+    var handler = new FakeShellContextMenuMessageHandler
+    {
+        HandlesMenuMsg2 = true,
+        MenuMsg2HResult = 0,
+        MenuMsg2Result = expected,
+    };
+    var handled = false;
+
+    var actual = ShellContextMenuMessageForwarder.Forward(
+        handler,
+        0x0120,
+        new IntPtr(0x56),
+        new IntPtr(0x78),
+        ref handled);
+
+    Assert(handled);
+    Assert(actual == expected);
+    Assert(handler.MenuMsg2CallCount == 1);
+    Assert(handler.LastMessage == 0x0120);
+    Assert(handler.LastWParam == new IntPtr(0x56));
+    Assert(handler.LastLParam == new IntPtr(0x78));
+    Assert(handler.MenuMsgCallCount == 0);
+}
+
+static void ShellContextMenu3FailureRemainsUnhandled()
+{
+    var handler = new FakeShellContextMenuMessageHandler
+    {
+        HandlesMenuMsg2 = true,
+        MenuMsg2HResult = unchecked((int)0x80004005),
+        MenuMsg2Result = new IntPtr(0x1234),
+    };
+    var handled = true;
+
+    var actual = ShellContextMenuMessageForwarder.Forward(
+        handler,
+        0x002B,
+        IntPtr.Zero,
+        IntPtr.Zero,
+        ref handled);
+
+    Assert(!handled);
+    Assert(actual == IntPtr.Zero);
+    Assert(handler.MenuMsg2CallCount == 1);
+    Assert(handler.MenuMsgCallCount == 0);
+}
+
 static void ThemePalettesKeepDistinctModes()
 {
     var dark = ThemePalette.For(AppThemeMode.Dark);
@@ -1386,5 +1438,58 @@ static void Assert(bool condition)
     if (!condition)
     {
         throw new InvalidOperationException("Assertion failed.");
+    }
+}
+
+sealed class FakeShellContextMenuMessageHandler : IShellContextMenuMessageHandler
+{
+    public bool HandlesMenuMsg2 { get; init; }
+
+    public int MenuMsg2HResult { get; init; }
+
+    public IntPtr MenuMsg2Result { get; init; }
+
+    public bool HandlesMenuMsg { get; init; }
+
+    public int MenuMsgHResult { get; init; }
+
+    public int MenuMsg2CallCount { get; private set; }
+
+    public int MenuMsgCallCount { get; private set; }
+
+    public uint LastMessage { get; private set; }
+
+    public IntPtr LastWParam { get; private set; }
+
+    public IntPtr LastLParam { get; private set; }
+
+    public bool TryHandleMenuMsg2(
+        uint message,
+        IntPtr wParam,
+        IntPtr lParam,
+        out int hResult,
+        out IntPtr result)
+    {
+        MenuMsg2CallCount++;
+        LastMessage = message;
+        LastWParam = wParam;
+        LastLParam = lParam;
+        hResult = MenuMsg2HResult;
+        result = MenuMsg2Result;
+        return HandlesMenuMsg2;
+    }
+
+    public bool TryHandleMenuMsg(
+        uint message,
+        IntPtr wParam,
+        IntPtr lParam,
+        out int hResult)
+    {
+        MenuMsgCallCount++;
+        LastMessage = message;
+        LastWParam = wParam;
+        LastLParam = lParam;
+        hResult = MenuMsgHResult;
+        return HandlesMenuMsg;
     }
 }
