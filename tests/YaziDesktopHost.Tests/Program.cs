@@ -45,7 +45,9 @@ var tests = new (string Name, Action Test)[]
     ("Yazi action tokenizer rejects unterminated quotes", YaziActionTokenizerRejectsUnterminatedQuotes),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
     ("host settings round trip and reject unsupported values", HostSettingsRoundTripAndRejectsUnsupportedValues),
-    ("Yazi exit policy distinguishes normal and abnormal exits", YaziExitPolicyDistinguishesNormalAndAbnormalExits),
+    ("Yazi exit policy distinguishes known normal and abnormal exits", YaziExitPolicyDistinguishesKnownNormalAndAbnormalExits),
+    ("Yazi exit policy preserves unknown process-monitor exits", YaziExitPolicyPreservesUnknownProcessMonitorExit),
+    ("Yazi exit policy preserves unknown terminal-marker exits", YaziExitPolicyPreservesUnknownTerminalMarkerExit),
     ("shell target prefers selected paths", ShellTargetPrefersSelectedPaths),
     ("shell target preserves multiple selection", ShellTargetPreservesMultipleSelection),
     ("shell target falls back to hovered path", ShellTargetFallsBackToHoveredPath),
@@ -942,11 +944,34 @@ static void BridgeEnvironmentScopeRestoresValues()
     }
 }
 
-static void YaziExitPolicyDistinguishesNormalAndAbnormalExits()
+static void YaziExitPolicyDistinguishesKnownNormalAndAbnormalExits()
 {
-    Assert(YaziProcessExitPolicy.IsNormalExit(0));
-    Assert(!YaziProcessExitPolicy.IsNormalExit(1));
-    Assert(!YaziProcessExitPolicy.IsNormalExit(-1));
+    var normal = YaziProcessExitPolicy.FromProcessMonitor(0);
+    var positiveFailure = YaziProcessExitPolicy.FromProcessMonitor(1);
+    var negativeFailure = YaziProcessExitPolicy.FromProcessMonitor(-1);
+
+    Assert(normal == new YaziProcessExit.Known(0));
+    Assert(YaziProcessExitPolicy.Classify(normal) == YaziProcessExitClassification.Normal);
+    Assert(YaziProcessExitPolicy.Classify(positiveFailure) == YaziProcessExitClassification.Abnormal);
+    Assert(YaziProcessExitPolicy.Classify(negativeFailure) == YaziProcessExitClassification.Abnormal);
+}
+
+static void YaziExitPolicyPreservesUnknownProcessMonitorExit()
+{
+    var exit = YaziProcessExitPolicy.FromProcessMonitor(null);
+
+    Assert(exit is YaziProcessExit.Unknown);
+    Assert(YaziProcessExitPolicy.Classify(exit) == YaziProcessExitClassification.Unknown);
+    Assert(!YaziProcessExitPolicy.IsNormalExit(exit));
+}
+
+static void YaziExitPolicyPreservesUnknownTerminalMarkerExit()
+{
+    var exit = YaziProcessExitPolicy.FromTerminalMarker(null);
+
+    Assert(exit is YaziProcessExit.Unknown);
+    Assert(YaziProcessExitPolicy.Classify(exit) == YaziProcessExitClassification.Unknown);
+    Assert(!YaziProcessExitPolicy.IsNormalExit(exit));
 }
 
 static void ShellTargetPrefersSelectedPaths()
