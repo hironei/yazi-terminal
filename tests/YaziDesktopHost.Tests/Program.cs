@@ -28,6 +28,7 @@ var tests = new (string Name, Action Test)[]
     ("last-instance control pipe returns a negative ACK", LastInstanceControlPipeReturnsNegativeAcknowledgement),
     ("bridge parser accepts a CJK snapshot", BridgeParserAcceptsCjkSnapshot),
     ("bridge parser accepts a command catalog", BridgeParserAcceptsCommandCatalog),
+    ("bridge parser preserves command run sequence", BridgeParserPreservesCommandRunSequence),
     ("bridge parser rejects an invalid command catalog", BridgeParserRejectsInvalidCommandCatalog),
     ("bridge parser rejects a wrong instance", BridgeParserRejectsWrongInstance),
     ("bridge reducer applies an ordered update", BridgeReducerAppliesOrderedUpdate),
@@ -39,6 +40,7 @@ var tests = new (string Name, Action Test)[]
     ("Yazi command line uses bridge identity", YaziCommandLineUsesBridgeIdentity),
     ("Yazi directory command preserves argument boundaries", YaziDirectoryCommandPreservesArgumentBoundaries),
     ("Yazi action command preserves argument boundaries", YaziActionCommandPreservesArgumentBoundaries),
+    ("Yazi action sequence preserves binding order", YaziActionSequencePreservesBindingOrder),
     ("Yazi settings reveal command preserves the Windows path", YaziSettingsRevealCommandPreservesWindowsPath),
     ("Yazi file opener reveals then opens the configured opener", YaziFileOpenerUsesRevealAndOpen),
     ("Yazi action tokenizer handles quoted arguments", YaziActionTokenizerHandlesQuotedArguments),
@@ -544,6 +546,27 @@ static void BridgeParserAcceptsCommandCatalog()
     Assert(commands[1].Run == "quit");
 }
 
+static void BridgeParserPreservesCommandRunSequence()
+{
+    using var document = JsonDocument.Parse("""
+        {
+          "commands": [
+            {
+              "key": "g d",
+              "run": "cd C:\\work",
+              "runs": ["cd C:\\work", "plugin refresh"],
+              "description": "Go work and refresh"
+            }
+          ]
+        }
+        """);
+
+    var command = new YaziBridgeCommandCatalogParser().Parse(document.RootElement).Single();
+
+    Assert(command.ActionSequence.SequenceEqual(["cd C:\\work", "plugin refresh"]));
+    Assert(command.DisplayRun == "cd C:\\work → plugin refresh");
+}
+
 static void BridgeParserRejectsInvalidCommandCatalog()
 {
     using var document = JsonDocument.Parse("""
@@ -834,6 +857,18 @@ static void YaziActionCommandPreservesArgumentBoundaries()
         "--",
         "powershell.exe",
         "--block"]));
+}
+
+static void YaziActionSequencePreservesBindingOrder()
+{
+    var startInfos = YaziCommandController.CreateStartInfos(
+        @"C:\tools\ya.exe",
+        "12345",
+        ["cd \"C:\\work folder\"", "plugin refresh"]);
+
+    Assert(startInfos.Count == 2);
+    Assert(startInfos[0].ArgumentList.SequenceEqual(["emit-to", "12345", "cd", @"C:\work folder"]));
+    Assert(startInfos[1].ArgumentList.SequenceEqual(["emit-to", "12345", "plugin", "refresh"]));
 }
 
 static void YaziSettingsRevealCommandPreservesWindowsPath()
@@ -1305,13 +1340,18 @@ static void CommandPaletteFiltersThemeCommands()
 static void CommandPaletteIncludesYaziCommands()
 {
     var commands = CommandPaletteCommands.WithYaziCommands([
-        new YaziBridgeCommand("g d", "cd C:\\work", "Go work"),
+        new YaziBridgeCommand(
+            "g d",
+            "cd C:\\work",
+            "Go work",
+            ["cd C:\\work", "plugin refresh"]),
     ]);
 
     Assert(commands.Count == 4);
     Assert(commands[^1].Id == PaletteCommandId.YaziAction);
     Assert(commands[^1].Title == "Yazi: Go work");
-    Assert(CommandPaletteCommands.Filter(commands, "C:\\work").Single().YaziCommand?.Run == "cd C:\\work");
+    var yaziCommand = CommandPaletteCommands.Filter(commands, "plugin refresh").Single().YaziCommand;
+    Assert(yaziCommand?.ActionSequence.SequenceEqual(["cd C:\\work", "plugin refresh"]) == true);
 }
 
 static void AssertDeclaredMethods(Type declaringType, string nestedTypeName, params string[] expectedNames)

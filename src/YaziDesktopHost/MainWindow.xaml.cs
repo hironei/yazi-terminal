@@ -168,7 +168,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        _ = ExecuteYaziCommandAsync(yaziCommand.Run, _yaExecutable, _yaziClientId);
+        _ = ExecuteYaziCommandAsync(yaziCommand.ActionSequence, _yaExecutable, _yaziClientId);
     }
 
     private static async Task EditSettingsInYaziAsync(
@@ -200,13 +200,13 @@ public partial class MainWindow : Window
     }
 
     private static async Task ExecuteYaziCommandAsync(
-        string run,
+        IReadOnlyList<string> runs,
         string yaExecutable,
         string clientId)
     {
         try
         {
-            if (!await YaziCommandController.ExecuteAsync(yaExecutable, clientId, run)
+            if (!await YaziCommandController.ExecuteAsync(yaExecutable, clientId, runs)
                     .ConfigureAwait(true))
             {
                 AppLogger.Log("yazi_command_failed");

@@ -519,11 +519,14 @@ capability first. Invalid or missing theme files do not prevent startup;
 unsupported host mappings use built-in fallbacks.
 
 When the optional `yazi-desktop-host.yazi` bridge plugin is installed, the
-palette also lists actions from the configured Yazi `keymap.toml`, including
-their descriptions and key bindings. Selecting one sends the action to the
-current Yazi instance through `ya emit-to`; plugin and `shell` actions remain
-owned and interpreted by Yazi. The catalog is read when the bridge connects,
-so restart Yazi Terminal after changing the keymap.
+palette also lists manager actions from `[[mgr.prepend_keymap]]` and
+`[[mgr.append_keymap]]` in the configured Yazi `keymap.toml`, including their
+descriptions and key bindings. A scalar `run` sends one action; a string-array
+`run` sends each action in its declared order through `ya emit-to`. Other
+keymap contexts are not listed because the palette targets the current Yazi
+manager. Plugin and `shell` actions remain owned and interpreted by Yazi. The
+catalog is read when the bridge connects, so restart Yazi Terminal after
+changing the keymap.
 
 The embedded terminal supports the normal Yazi interaction path, including:
 

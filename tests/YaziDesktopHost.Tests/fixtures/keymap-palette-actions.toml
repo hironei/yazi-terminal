@@ -1,0 +1,17 @@
+[[mgr.prepend_keymap]]
+on = "g"
+run = "cd C:\\workspace"
+desc = "Go workspace"
+
+[[mgr.append_keymap]]
+on = [ "z", "r" ]
+run = [
+  "plugin refresh",
+  "shell --confirm echo refreshed",
+]
+desc = "Refresh then report"
+
+[[input.prepend_keymap]]
+on = "q"
+run = "close"
+desc = "Input-only action"

@@ -56,10 +56,10 @@ internal static class CommandPaletteCommands
         commands.AddRange(yaziCommands.Select(command =>
         {
             var title = string.IsNullOrWhiteSpace(command.Description)
-                ? $"Yazi: {command.Run}"
+                ? $"Yazi: {command.DisplayRun}"
                 : $"Yazi: {command.Description}";
             var key = string.IsNullOrWhiteSpace(command.Key) ? "No key" : command.Key;
-            var description = $"{key}  ·  {command.Run}";
+            var description = $"{key}  ·  {command.DisplayRun}";
             return new CommandPaletteCommand(PaletteCommandId.YaziAction, title, description, command);
         }));
         return commands;
