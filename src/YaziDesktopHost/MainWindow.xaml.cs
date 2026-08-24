@@ -961,18 +961,19 @@ public partial class MainWindow : Window
                 if (!cancellationToken.IsCancellationRequested)
                 {
                     AppLogger.Log("yazi_process_exit_detected");
-                    int exitCode;
+                    YaziProcessExit exit;
                     try
                     {
-                        exitCode = ReadExitCode(process, systemProcess);
+                        exit = YaziProcessExitPolicy.FromProcessMonitor(
+                            ReadExitCode(process, systemProcess));
                     }
                     catch (Exception exception)
                     {
                         AppLogger.Log("yazi_exit_code_unavailable", exception);
-                        exitCode = 0;
+                        exit = YaziProcessExitPolicy.FromProcessMonitor(null);
                     }
 
-                    Dispatcher.Invoke(() => HandleProcessExit(term, exitCode));
+                    Dispatcher.Invoke(() => HandleProcessExit(term, exit));
                 }
             }
             catch (Exception exception)
@@ -980,47 +981,55 @@ public partial class MainWindow : Window
                 if (!cancellationToken.IsCancellationRequested)
                 {
                     AppLogger.Log("yazi_exit_observation_failed", exception);
-                    Dispatcher.Invoke(() => HandleUnexpectedExit(term));
+                    Dispatcher.Invoke(() => HandleProcessExit(
+                        term,
+                        YaziProcessExitPolicy.FromProcessMonitor(null)));
                 }
             }
         });
     }
 
-    private void HandleProcessExit(TermPTY term, int? exitCode = null)
+    private void HandleProcessExit(TermPTY term, YaziProcessExit? exit = null)
     {
         if (_isClosing || !ReferenceEquals(_term, term))
         {
             return;
         }
 
-        if (exitCode is null)
+        if (exit is null)
         {
             var process = term.Process;
             if (process is null)
             {
-                HandleUnexpectedExit(term);
-                return;
+                exit = YaziProcessExitPolicy.FromTerminalMarker(null);
             }
-
-            try
+            else
             {
-                if (!process.HasExited)
+                try
                 {
-                    return;
-                }
+                    if (!process.HasExited)
+                    {
+                        return;
+                    }
 
-                exitCode = ReadExitCode(process);
-            }
-            catch (Exception exception)
-            {
-                AppLogger.Log("yazi_exit_code_read_failed", exception);
-                HandleUnexpectedExit(term);
-                return;
+                    exit = YaziProcessExitPolicy.FromTerminalMarker(ReadExitCode(process));
+                }
+                catch (Exception exception)
+                {
+                    AppLogger.Log("yazi_exit_code_read_failed", exception);
+                    exit = YaziProcessExitPolicy.FromTerminalMarker(null);
+                }
             }
         }
 
-        if (!YaziProcessExitPolicy.IsNormalExit(exitCode.Value))
+        var classification = YaziProcessExitPolicy.Classify(exit);
+        if (classification != YaziProcessExitClassification.Normal)
         {
+            if (classification == YaziProcessExitClassification.Unknown)
+            {
+                AppLogger.Log("yazi_exit_code_unknown");
+            }
+
             HandleUnexpectedExit(term);
             return;
         }
