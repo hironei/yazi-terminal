@@ -44,6 +44,7 @@ var tests = new (string Name, Action Test)[]
     ("Yazi action tokenizer handles quoted arguments", YaziActionTokenizerHandlesQuotedArguments),
     ("Yazi action tokenizer rejects unterminated quotes", YaziActionTokenizerRejectsUnterminatedQuotes),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
+    ("host settings catalog matches the documented font options", HostSettingsCatalogMatchesDocumentedFontOptions),
     ("host settings round trip and reject unsupported values", HostSettingsRoundTripAndRejectsUnsupportedValues),
     ("Yazi exit policy distinguishes normal and abnormal exits", YaziExitPolicyDistinguishesNormalAndAbnormalExits),
     ("shell target prefers selected paths", ShellTargetPrefersSelectedPaths),
@@ -1227,6 +1228,18 @@ static void HostSettingsRoundTripAndRejectsUnsupportedValues()
             File.Delete(path);
         }
     }
+}
+
+static void HostSettingsCatalogMatchesDocumentedFontOptions()
+{
+    Assert(HostSettingsCatalog.FontFamilies.SequenceEqual([
+        "MS Gothic",
+        "Consolas",
+        "Cascadia Mono",
+        "Cascadia Code"]));
+    Assert(HostSettingsCatalog.FontSizes.SequenceEqual([12, 14, 16, 18, 20]));
+    Assert(HostSettingsCatalog.DefaultFontFamily == "MS Gothic");
+    Assert(HostSettingsCatalog.DefaultFontSize == 14);
 }
 
 static void YaziThemeLoaderReadsSelectedFlavor()

@@ -88,14 +88,26 @@ internal static class HostSettingsStore
             var themeMode = string.Equals(persisted.Theme, "Light", StringComparison.OrdinalIgnoreCase)
                 ? AppThemeMode.Light
                 : AppThemeMode.Dark;
-            var fontFamily = HostSettingsCatalog.IsSupportedFontFamily(persisted.FontFamily)
+            var hasSupportedFontFamily = HostSettingsCatalog.IsSupportedFontFamily(persisted.FontFamily);
+            var fontFamily = hasSupportedFontFamily
                 ? HostSettingsCatalog.FontFamilies.First(
                     candidate => string.Equals(candidate, persisted.FontFamily, StringComparison.OrdinalIgnoreCase))
                 : HostSettingsCatalog.DefaultFontFamily;
-            var fontSize = persisted.FontSize is { } size
-                && HostSettingsCatalog.IsSupportedFontSize(size)
-                ? size
+            if (persisted.FontFamily is not null && !hasSupportedFontFamily)
+            {
+                AppLogger.Log("settings_font_family_fallback");
+            }
+
+            var requestedFontSize = persisted.FontSize;
+            var hasSupportedFontSize = requestedFontSize is { } size
+                && HostSettingsCatalog.IsSupportedFontSize(size);
+            var fontSize = hasSupportedFontSize
+                ? requestedFontSize!.Value
                 : HostSettingsCatalog.DefaultFontSize;
+            if (requestedFontSize is not null && !hasSupportedFontSize)
+            {
+                AppLogger.Log("settings_font_size_fallback");
+            }
 
             settings = new HostSettings(
                 themeMode,
