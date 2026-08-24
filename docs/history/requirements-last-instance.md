@@ -29,12 +29,13 @@ Yazi Terminal window while preserving the existing new-window behavior.
 2. Normal startup remains a new window, including when no last instance exists.
 3. Each host instance publishes a current-user-scoped control endpoint and
    records it as the last launched instance.
-4. A last-instance request sends a bounded, framed, validated directory command
-   to the recorded endpoint, with one deadline covering connection, request,
-   and acknowledgement.
-5. The host dispatches a request to the WPF thread, serializes directory
-   actions, activates its window, and acknowledges success only after Yazi's
-   documented `cd` action succeeds for the active tab.
+4. A last-instance request sends a bounded, framed, validated path command to
+   the recorded endpoint, with one deadline covering connection, request, and
+   acknowledgement.
+5. The host dispatches a request to the WPF thread, serializes complete path
+   transactions (a directory `cd` or file `reveal → open`), activates its
+   window, and acknowledges success only after the requested transaction
+   succeeds for the active tab.
 6. Missing, malformed, stale, or unreachable endpoint metadata falls back to
    normal new-window startup.
 7. Closing an instance must not clear a newer instance's endpoint metadata.

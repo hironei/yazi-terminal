@@ -26,6 +26,7 @@ var tests = new (string Name, Action Test)[]
     ("last-instance control pipe accepts a directory request", LastInstanceControlPipeAcceptsDirectoryRequest),
     ("last-instance control pipe accepts a file request", LastInstanceControlPipeAcceptsFileRequest),
     ("last-instance control pipe returns a negative ACK", LastInstanceControlPipeReturnsNegativeAcknowledgement),
+    ("path requests serialize startup file open and last-instance ACK", PathRequestsSerializeStartupFileOpenAndLastInstanceAcknowledgement),
     ("bridge parser accepts a CJK snapshot", BridgeParserAcceptsCjkSnapshot),
     ("bridge parser accepts a command catalog", BridgeParserAcceptsCommandCatalog),
     ("bridge parser rejects an invalid command catalog", BridgeParserRejectsInvalidCommandCatalog),
@@ -500,6 +501,59 @@ static void LastInstanceControlPipeReturnsNegativeAcknowledgement()
 
         Assert(registry.TryRead(out var endpoint));
         Assert(!LastInstanceClient.TrySend(endpoint!, @"C:\work", TimeSpan.FromSeconds(2)));
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
+    }
+}
+
+static void PathRequestsSerializeStartupFileOpenAndLastInstanceAcknowledgement()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-path-transaction-");
+    try
+    {
+        var registry = new LastInstanceRegistry(
+            Path.Combine(directory.FullName, "last.json"),
+            $@"Local\yazi-test-{Guid.NewGuid():N}");
+        using var server = new LastInstanceControlServer(registry);
+        var controller = new DelayedPathTransactionController();
+        var sequencer = new YaziPathRequestSequencer(controller);
+        server.RequestReceived += (request, cancellationToken) => sequencer.ExecuteAsync(
+            request.Command switch
+            {
+                LastInstanceControlCommand.ChangeDirectory =>
+                    new YaziPathRequest(YaziPathRequestKind.ChangeDirectory, request.Path),
+                LastInstanceControlCommand.OpenFile =>
+                    new YaziPathRequest(YaziPathRequestKind.OpenFile, request.Path),
+                _ => throw new ArgumentOutOfRangeException(nameof(request)),
+            },
+            cancellationToken);
+        Assert(server.Start());
+        Assert(registry.TryRead(out var endpoint));
+
+        var startupOpen = sequencer.ExecuteAsync(new YaziPathRequest(
+            YaziPathRequestKind.OpenFile,
+            @"C:\work\A.txt"));
+        Assert(controller.OpenRevealStarted.Wait(TimeSpan.FromSeconds(2)));
+
+        var lastInstanceChange = LastInstanceClient.TrySendAsync(
+            endpoint!,
+            new LastInstanceControlRequest(
+                @"C:\work\B",
+                LastInstanceControlCommand.ChangeDirectory),
+            TimeSpan.FromSeconds(2));
+        Assert(!lastInstanceChange.IsCompleted);
+        Assert(controller.Operations.SequenceEqual(["reveal A"]));
+
+        controller.AllowOpen();
+        Assert(startupOpen.GetAwaiter().GetResult());
+        Assert(controller.ChangeDirectoryStarted.Wait(TimeSpan.FromSeconds(2)));
+        Assert(!lastInstanceChange.IsCompleted);
+        Assert(controller.Operations.SequenceEqual(["reveal A", "open A", "cd B"]));
+
+        controller.AllowChangeDirectory();
+        Assert(lastInstanceChange.GetAwaiter().GetResult());
     }
     finally
     {
@@ -1386,5 +1440,56 @@ static void Assert(bool condition)
     if (!condition)
     {
         throw new InvalidOperationException("Assertion failed.");
+    }
+}
+
+sealed class DelayedPathTransactionController : IYaziPathTransactionController
+{
+    private readonly TaskCompletionSource _openRelease = new();
+    private readonly TaskCompletionSource _changeDirectoryRelease = new();
+    private readonly List<string> _operations = [];
+
+    public ManualResetEventSlim OpenRevealStarted { get; } = new();
+
+    public ManualResetEventSlim ChangeDirectoryStarted { get; } = new();
+
+    public IReadOnlyList<string> Operations
+    {
+        get
+        {
+            lock (_operations)
+            {
+                return _operations.ToArray();
+            }
+        }
+    }
+
+    public async Task<bool> ChangeDirectoryAsync(string directory, CancellationToken cancellationToken)
+    {
+        AddOperation("cd B");
+        ChangeDirectoryStarted.Set();
+        await _changeDirectoryRelease.Task.WaitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> OpenFileAsync(string filePath, CancellationToken cancellationToken)
+    {
+        AddOperation("reveal A");
+        OpenRevealStarted.Set();
+        await _openRelease.Task.WaitAsync(cancellationToken);
+        AddOperation("open A");
+        return true;
+    }
+
+    public void AllowOpen() => _openRelease.SetResult();
+
+    public void AllowChangeDirectory() => _changeDirectoryRelease.SetResult();
+
+    private void AddOperation(string operation)
+    {
+        lock (_operations)
+        {
+            _operations.Add(operation);
+        }
     }
 }
