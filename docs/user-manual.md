@@ -546,6 +546,10 @@ negotiation.
 
 ## Diagnostics
 
+The host may write category-level failure diagnostics to
+`%LOCALAPPDATA%\YaziTerminal\app.log`. Shell context-menu item names are not
+read or written to that log.
+
 For the opt-in terminal color fixture, set the following environment variable
 before starting the host:
 
