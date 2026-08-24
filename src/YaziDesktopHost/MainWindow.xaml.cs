@@ -14,6 +14,7 @@ namespace YaziDesktopHost;
 public partial class MainWindow : Window
 {
     private readonly string _initialDirectory;
+    private readonly string? _fileToOpen;
     private readonly LastInstanceControlServer _lastInstanceServer;
     private EasyTerminalControl? _terminal;
     private TermPTY? _term;
@@ -51,15 +52,21 @@ public partial class MainWindow : Window
     private const int VkControl = 0x11;
 
     public MainWindow()
-        : this(Environment.CurrentDirectory)
+        : this(Environment.CurrentDirectory, null)
     {
     }
 
     public MainWindow(string initialDirectory)
+        : this(initialDirectory, null)
+    {
+    }
+
+    public MainWindow(string initialDirectory, string? fileToOpen)
     {
         _initialDirectory = Path.GetFullPath(initialDirectory);
+        _fileToOpen = fileToOpen is null ? null : Path.GetFullPath(fileToOpen);
         _lastInstanceServer = new LastInstanceControlServer();
-        _lastInstanceServer.DirectoryRequested += LastInstanceServer_DirectoryRequestedAsync;
+        _lastInstanceServer.RequestReceived += LastInstanceServer_RequestReceivedAsync;
         var settings = HostSettingsStore.Load();
         _themeMode = settings.ThemeMode;
         _fontFamily = settings.FontFamily;
@@ -408,8 +415,8 @@ public partial class MainWindow : Window
         _settingsWatcher = null;
     }
 
-    private async Task<bool> LastInstanceServer_DirectoryRequestedAsync(
-        string directory,
+    private async Task<bool> LastInstanceServer_RequestReceivedAsync(
+        LastInstanceControlRequest request,
         CancellationToken cancellationToken)
     {
         if (_isClosing || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
@@ -420,7 +427,7 @@ public partial class MainWindow : Window
         try
         {
             var operation = Dispatcher.InvokeAsync(
-                () => HandleLastInstanceDirectoryAsync(directory, cancellationToken),
+                () => HandleLastInstanceRequestAsync(request, cancellationToken),
                 DispatcherPriority.Input,
                 cancellationToken);
             var handlerTask = await operation.Task.ConfigureAwait(false);
@@ -436,8 +443,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<bool> HandleLastInstanceDirectoryAsync(
-        string directory,
+    private async Task<bool> HandleLastInstanceRequestAsync(
+        LastInstanceControlRequest request,
         CancellationToken cancellationToken)
     {
         try
@@ -447,12 +454,19 @@ public partial class MainWindow : Window
             {
                 if (_isClosing || !_yaziReady || _yaziClientId is null || _yaExecutable is null)
                 {
-                    AppLogger.Log("last_instance_directory_unavailable");
+                    AppLogger.Log("last_instance_request_unavailable");
                     return false;
                 }
 
-                ActivateForDirectoryRequest();
-                return await ChangeDirectoryAsync(directory, cancellationToken).ConfigureAwait(false);
+                ActivateForPathRequest();
+                return request.Command switch
+                {
+                    LastInstanceControlCommand.ChangeDirectory =>
+                        await ChangeDirectoryAsync(request.Path, cancellationToken).ConfigureAwait(false),
+                    LastInstanceControlCommand.OpenFile =>
+                        await OpenFileAsync(request.Path, cancellationToken).ConfigureAwait(false),
+                    _ => false,
+                };
             }
             finally
             {
@@ -496,7 +510,38 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ActivateForDirectoryRequest()
+    private async Task<bool> OpenFileAsync(
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        if (_yaziClientId is null || _yaExecutable is null)
+        {
+            AppLogger.Log("last_instance_file_unavailable");
+            return false;
+        }
+
+        try
+        {
+            var succeeded = await YaziFileController.OpenAsync(
+                _yaExecutable,
+                _yaziClientId,
+                filePath,
+                cancellationToken).ConfigureAwait(false);
+            if (!succeeded && !_isClosing)
+            {
+                AppLogger.Log("last_instance_file_open_failed");
+            }
+
+            return succeeded;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
+        {
+            AppLogger.Log("last_instance_file_open_failed", exception);
+            return false;
+        }
+    }
+
+    private void ActivateForPathRequest()
     {
         if (WindowState == WindowState.Minimized)
         {
@@ -541,7 +586,7 @@ public partial class MainWindow : Window
         _bridgeEnvironment?.Dispose();
         _bridgeEnvironment = null;
         DisposeBridge();
-        _lastInstanceServer.DirectoryRequested -= LastInstanceServer_DirectoryRequestedAsync;
+        _lastInstanceServer.RequestReceived -= LastInstanceServer_RequestReceivedAsync;
         _lastInstanceServer.Dispose();
     }
 
@@ -860,6 +905,13 @@ public partial class MainWindow : Window
         if (TerminalColorFixture.IsEnabled)
         {
             _ = ShowTerminalColorFixtureAsync(term, _processMonitorCancellation.Token);
+        }
+
+        if (_fileToOpen is { } fileToOpen)
+        {
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.Input,
+                new Action(() => _ = OpenFileAsync(fileToOpen, _processMonitorCancellation.Token)));
         }
     }
 

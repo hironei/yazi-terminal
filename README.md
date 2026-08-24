@@ -46,12 +46,15 @@ dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
 ```
 
 The normal executable invocation creates a new window. Pass a directory to set
-the initial Yazi directory. To reuse the most recently launched Yazi Terminal
-window, use `--last-instance`:
+the initial Yazi directory, or pass an existing file to reveal and open it
+using Yazi's configured opener/editor. To reuse the most recently launched Yazi
+Terminal window, use `--last-instance`:
 
 ```powershell
 YaziTerminal.exe C:\work\project
+YaziTerminal.exe C:\work\project\README.md
 YaziTerminal.exe --last-instance C:\work\other-project
+YaziTerminal.exe --last-instance C:\work\project\README.md
 ```
 
 If the last instance is not available, `--last-instance` starts a new window

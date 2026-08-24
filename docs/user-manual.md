@@ -116,13 +116,22 @@ To run the host from source:
 dotnet run --project src/YaziDesktopHost/YaziDesktopHost.csproj
 ```
 
-### Command-line directory routing
+### Command-line path routing
 
 Starting `YaziTerminal.exe` normally creates a new window. A directory can be
-passed as the first positional argument:
+passed as the first positional argument and becomes Yazi's initial directory:
 
 ```powershell
 YaziTerminal.exe C:\work\project
+```
+
+An existing file can also be passed. Yazi starts in the file's parent
+directory, reveals the file, and runs its `open` action. Yazi's `[open]` and
+`[opener]` configuration decides whether that action uses the configured
+editor or another opener:
+
+```powershell
+YaziTerminal.exe C:\work\project\README.md
 ```
 
 To request the most recently launched Yazi Terminal window instead, use
@@ -130,12 +139,14 @@ To request the most recently launched Yazi Terminal window instead, use
 
 ```powershell
 YaziTerminal.exe --last-instance C:\work\project
+YaziTerminal.exe --last-instance C:\work\project\README.md
 ```
 
 The existing window is brought to the foreground and its active Yazi tab is
-asked to change to the directory. If no usable last instance exists, the
-command starts a new window instead. The option is current-user-only and does
-not reuse a Git Bash or other terminal pane.
+asked to change to the directory. For a file target, the existing window
+reveals and opens the file using Yazi's configured opener/editor. If no usable
+last instance exists, the command starts a new window instead. The option is
+current-user-only and does not reuse a Git Bash or other terminal pane.
 
 From Git Bash, quote the executable and directory when either path contains
 spaces:

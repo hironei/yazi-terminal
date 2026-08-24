@@ -12,6 +12,7 @@ var tests = new (string Name, Action Test)[]
     ("paired ya lookup prefers the yazi directory", PairedYaLookupPrefersYaziDirectory),
     ("missing executable is classified", MissingExecutableIsClassified),
     ("command line options preserve new-window default", CommandLineOptionsPreserveNewWindowDefault),
+    ("command line options route an existing file through its parent directory", CommandLineOptionsRouteExistingFile),
     ("command line options select last instance", CommandLineOptionsSelectLastInstance),
     ("last-instance protocol validates control frames", LastInstanceProtocolValidatesControlFrames),
     ("last-instance frame reader rejects oversized frames", LastInstanceFrameReaderRejectsOversizedFrames),
@@ -23,6 +24,7 @@ var tests = new (string Name, Action Test)[]
     ("last-instance client times out while waiting for ACK", LastInstanceClientTimesOutWhileWaitingForAcknowledgement),
     ("last-instance client rejects an invalid ACK frame", LastInstanceClientRejectsInvalidAcknowledgementFrame),
     ("last-instance control pipe accepts a directory request", LastInstanceControlPipeAcceptsDirectoryRequest),
+    ("last-instance control pipe accepts a file request", LastInstanceControlPipeAcceptsFileRequest),
     ("last-instance control pipe returns a negative ACK", LastInstanceControlPipeReturnsNegativeAcknowledgement),
     ("bridge parser accepts a CJK snapshot", BridgeParserAcceptsCjkSnapshot),
     ("bridge parser accepts a command catalog", BridgeParserAcceptsCommandCatalog),
@@ -38,6 +40,7 @@ var tests = new (string Name, Action Test)[]
     ("Yazi directory command preserves argument boundaries", YaziDirectoryCommandPreservesArgumentBoundaries),
     ("Yazi action command preserves argument boundaries", YaziActionCommandPreservesArgumentBoundaries),
     ("Yazi settings reveal command preserves the Windows path", YaziSettingsRevealCommandPreservesWindowsPath),
+    ("Yazi file opener reveals then opens the configured opener", YaziFileOpenerUsesRevealAndOpen),
     ("Yazi action tokenizer handles quoted arguments", YaziActionTokenizerHandlesQuotedArguments),
     ("Yazi action tokenizer rejects unterminated quotes", YaziActionTokenizerRejectsUnterminatedQuotes),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
@@ -146,6 +149,26 @@ static void CommandLineOptionsPreserveNewWindowDefault()
     Assert(positional.InitialDirectory.Equals(@"C:\project", StringComparison.OrdinalIgnoreCase));
 }
 
+static void CommandLineOptionsRouteExistingFile()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-command-line-file-");
+    var filePath = Path.Combine(directory.FullName, "notes 日本語.txt");
+    File.WriteAllText(filePath, "content");
+    try
+    {
+        var options = CommandLineOptions.Parse([filePath], Environment.CurrentDirectory);
+
+        Assert(!options.UseLastInstance);
+        Assert(options.InitialDirectory.Equals(directory.FullName, StringComparison.OrdinalIgnoreCase));
+        Assert(options.FilePath is not null
+            && options.FilePath.Equals(Path.GetFullPath(filePath), StringComparison.OrdinalIgnoreCase));
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
+    }
+}
+
 static void CommandLineOptionsSelectLastInstance()
 {
     var options = CommandLineOptions.Parse(
@@ -169,6 +192,13 @@ static void LastInstanceProtocolValidatesControlFrames()
 
     Assert(LastInstanceControlProtocol.TryParse(frame, out var parsed));
     Assert(parsed!.Path == request.Path);
+    Assert(parsed.Command == LastInstanceControlCommand.ChangeDirectory);
+    var fileRequest = new LastInstanceControlRequest(
+        @"C:\work\日本語 folder\notes.txt",
+        LastInstanceControlCommand.OpenFile);
+    var fileFrame = LastInstanceControlProtocol.Serialize(fileRequest);
+    Assert(LastInstanceControlProtocol.TryParse(fileFrame, out var parsedFile));
+    Assert(parsedFile!.Command == LastInstanceControlCommand.OpenFile);
     Assert(!LastInstanceControlProtocol.TryParse(
         frame.Replace(LastInstanceControlProtocol.SupportedProtocol, "wrong", StringComparison.Ordinal),
         out _));
@@ -391,9 +421,9 @@ static void LastInstanceControlPipeAcceptsDirectoryRequest()
         using var server = new LastInstanceControlServer(registry);
         var received = new ManualResetEventSlim();
         string? receivedPath = null;
-        server.DirectoryRequested += (path, _) =>
+        server.RequestReceived += (request, _) =>
         {
-            receivedPath = path;
+            receivedPath = request.Path;
             received.Set();
             return Task.FromResult(true);
         };
@@ -413,6 +443,43 @@ static void LastInstanceControlPipeAcceptsDirectoryRequest()
     }
 }
 
+static void LastInstanceControlPipeAcceptsFileRequest()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-last-instance-file-pipe-");
+    try
+    {
+        var registry = new LastInstanceRegistry(
+            Path.Combine(directory.FullName, "last.json"),
+            $@"Local\yazi-test-{Guid.NewGuid():N}");
+        using var server = new LastInstanceControlServer(registry);
+        LastInstanceControlRequest? received = null;
+        var receivedEvent = new ManualResetEventSlim();
+        server.RequestReceived += (request, _) =>
+        {
+            received = request;
+            receivedEvent.Set();
+            return Task.FromResult(true);
+        };
+        server.Start();
+
+        Assert(registry.TryRead(out var endpoint));
+        Assert(LastInstanceClient.TrySend(
+            endpoint!,
+            new LastInstanceControlRequest(
+                @"C:\work\space\日本語\notes.txt",
+                LastInstanceControlCommand.OpenFile),
+            TimeSpan.FromSeconds(2)));
+        Assert(receivedEvent.Wait(TimeSpan.FromSeconds(2)));
+        Assert(received is not null
+            && received.Command == LastInstanceControlCommand.OpenFile
+            && received.Path == @"C:\work\space\日本語\notes.txt");
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
+    }
+}
+
 static void LastInstanceControlPipeReturnsNegativeAcknowledgement()
 {
     var directory = Directory.CreateTempSubdirectory("yazi-last-instance-negative-");
@@ -422,7 +489,7 @@ static void LastInstanceControlPipeReturnsNegativeAcknowledgement()
             Path.Combine(directory.FullName, "last.json"),
             $@"Local\yazi-test-{Guid.NewGuid():N}");
         using var server = new LastInstanceControlServer(registry);
-        server.DirectoryRequested += (_, _) => Task.FromResult(false);
+        server.RequestReceived += (_, _) => Task.FromResult(false);
         server.Start();
 
         Assert(registry.TryRead(out var endpoint));
@@ -776,6 +843,30 @@ static void YaziSettingsRevealCommandPreservesWindowsPath()
         "12345",
         "reveal",
         path]));
+}
+
+static void YaziFileOpenerUsesRevealAndOpen()
+{
+    var path = @"C:\資料\space folder\notes.txt";
+    var revealStartInfo = YaziCommandController.CreateStartInfo(
+        @"C:\tools\ya.exe",
+        "12345",
+        YaziFileController.CreateRevealCommand(path));
+
+    Assert(revealStartInfo.ArgumentList.SequenceEqual([
+        "emit-to",
+        "12345",
+        "reveal",
+        path]));
+
+    var openStartInfo = YaziCommandController.CreateStartInfo(
+        @"C:\tools\ya.exe",
+        "12345",
+        "open");
+    Assert(openStartInfo.ArgumentList.SequenceEqual([
+        "emit-to",
+        "12345",
+        "open"]));
 }
 
 static void YaziActionTokenizerHandlesQuotedArguments()
