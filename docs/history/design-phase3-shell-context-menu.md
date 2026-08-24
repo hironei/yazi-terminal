@@ -63,7 +63,9 @@ The menu uses an ID range reserved by the host. The selected command is
 converted to an offset before `IContextMenu.InvokeCommand` is called. An
 `HwndSource` hook forwards `WM_INITMENUPOPUP`, owner-draw, and menu-character
 messages to `IContextMenu3` or `IContextMenu2` so registered Shell extensions
-can update their submenus.
+can update their submenus. For a successful `IContextMenu3.HandleMenuMsg2`
+call, the hook returns the supplied LRESULT as well as marking the message
+handled; `IContextMenu2` has no corresponding result value.
 
 ## Invocation integration
 
@@ -88,6 +90,9 @@ presentation remain manual compatibility gates.
 
 - Target resolution is covered by pure tests with filesystem, URL, CJK, empty,
   mixed, unavailable, and precedence fixtures.
+- An internal message-forwarding seam accepts a fake handler, proving that an
+  `IContextMenu3` success returns its LRESULT and that a failing HRESULT stays
+  unhandled without falling back to `IContextMenu2`.
 - Shell COM calls are not faked as a headless success. Manual Windows tests
   cover real menu creation and invocation; HRESULT failures are covered by
   the adapter's result boundary and static build checks.
