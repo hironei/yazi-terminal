@@ -56,6 +56,10 @@ var tests = new (string Name, Action Test)[]
     ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
     ("command palette filters theme commands", CommandPaletteFiltersThemeCommands),
     ("command palette includes Yazi commands", CommandPaletteIncludesYaziCommands),
+    ("palette navigation handles empty lists and selection boundaries", PaletteNavigationHandlesEmptyListsAndSelectionBoundaries),
+    ("palette navigation wraps at first and last rows", PaletteNavigationWrapsAtFirstAndLastRows),
+    ("palette navigation uses j and k only for empty queries", PaletteNavigationUsesJAndKOnlyForEmptyQueries),
+    ("palette navigation leaves filter text input unhandled", PaletteNavigationLeavesFilterTextInputUnhandled),
     ("Yazi theme loader reads the selected flavor", YaziThemeLoaderReadsSelectedFlavor),
     ("theme palettes keep dark defaults and distinct light colors", ThemePalettesKeepDistinctModes),
     ("theme palette settings override Yazi colors", ThemePaletteSettingsOverrideYaziColors),
@@ -1312,6 +1316,40 @@ static void CommandPaletteIncludesYaziCommands()
     Assert(commands[^1].Id == PaletteCommandId.YaziAction);
     Assert(commands[^1].Title == "Yazi: Go work");
     Assert(CommandPaletteCommands.Filter(commands, "C:\\work").Single().YaziCommand?.Run == "cd C:\\work");
+}
+
+static void PaletteNavigationHandlesEmptyListsAndSelectionBoundaries()
+{
+    Assert(PaletteNavigation.NextIndex(0, -1, 1) == -1);
+    Assert(PaletteNavigation.NextIndex(0, -1, -1) == -1);
+    Assert(PaletteNavigation.NextIndex(3, -1, 1) == 0);
+    Assert(PaletteNavigation.NextIndex(3, -1, -1) == 2);
+    Assert(PaletteNavigation.NextIndex(3, -1, 0) == -1);
+}
+
+static void PaletteNavigationWrapsAtFirstAndLastRows()
+{
+    Assert(PaletteNavigation.NextIndex(3, 0, -1) == 2);
+    Assert(PaletteNavigation.NextIndex(3, 2, 1) == 0);
+    Assert(PaletteNavigation.NextIndex(3, 1, 1) == 2);
+    Assert(PaletteNavigation.NextIndex(3, 1, -1) == 0);
+}
+
+static void PaletteNavigationUsesJAndKOnlyForEmptyQueries()
+{
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.J, true, string.Empty) == 1);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.K, true, "   ") == -1);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.J, false, string.Empty) is null);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.K, true, "theme") is null);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.Down, false, "theme") == 1);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.Up, false, "theme") == -1);
+}
+
+static void PaletteNavigationLeavesFilterTextInputUnhandled()
+{
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.Other, true, string.Empty) is null);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.J, true, "j") is null);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.K, true, "dark") is null);
 }
 
 static void AssertDeclaredMethods(Type declaringType, string nestedTypeName, params string[] expectedNames)

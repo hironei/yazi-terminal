@@ -83,3 +83,49 @@ internal static class CommandPaletteCommands
             .ToArray();
     }
 }
+
+internal enum PaletteNavigationKey
+{
+    Up,
+    Down,
+    J,
+    K,
+    Other,
+}
+
+internal static class PaletteNavigation
+{
+    public static int? TryGetMoveOffset(
+        PaletteNavigationKey key,
+        bool hasNoModifiers,
+        string? query)
+    {
+        return key switch
+        {
+            PaletteNavigationKey.Down => 1,
+            PaletteNavigationKey.Up => -1,
+            PaletteNavigationKey.J when hasNoModifiers && string.IsNullOrWhiteSpace(query) => 1,
+            PaletteNavigationKey.K when hasNoModifiers && string.IsNullOrWhiteSpace(query) => -1,
+            _ => null,
+        };
+    }
+
+    public static int NextIndex(int itemCount, int selectedIndex, int offset)
+    {
+        if (itemCount <= 0)
+        {
+            return -1;
+        }
+
+        if (offset == 0)
+        {
+            return selectedIndex >= 0 && selectedIndex < itemCount ? selectedIndex : -1;
+        }
+
+        var currentIndex = selectedIndex >= 0 && selectedIndex < itemCount
+            ? selectedIndex
+            : offset > 0 ? -1 : 0;
+        var nextIndex = (currentIndex + offset) % itemCount;
+        return nextIndex < 0 ? nextIndex + itemCount : nextIndex;
+    }
+}
