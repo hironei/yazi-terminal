@@ -36,6 +36,14 @@ var tests = new (string Name, Action Test)[]
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("bridge session publishes command catalog", BridgeSessionPublishesCommandCatalog),
+    ("Phase 2 AC 138 parser accepts valid UTF-8 snapshot", Phase2Ac138ParserAcceptsValidUtf8Snapshot),
+    ("Phase 2 AC 139 parser and frame reader reject invalid frames", Phase2Ac139ParserAndFrameReaderRejectInvalidFrames),
+    ("Phase 2 AC 140 reducer rejects invalid path kinds and required fields", Phase2Ac140ReducerRejectsInvalidPathKindsAndRequiredFields),
+    ("Phase 2 AC 141 reducer accepts first snapshot and ordered empty selection", Phase2Ac141ReducerAcceptsFirstSnapshotAndOrderedEmptySelection),
+    ("Phase 2 AC 142 reducer rejects duplicate out-of-order and gap updates", Phase2Ac142ReducerRejectsDuplicateOutOfOrderAndGapUpdates),
+    ("Phase 2 AC 143 session rejects goodbye and error then requires a snapshot", Phase2Ac143SessionRejectsGoodbyeAndErrorThenRequiresSnapshot),
+    ("Phase 2 AC 144 fixtures preserve CJK surrogate long and root paths", Phase2Ac144FixturesPreserveCjkSurrogateLongAndRootPaths),
+    ("Phase 2 AC 145 fixtures preserve URLs without terminal output", Phase2Ac145FixturesPreserveUrlsWithoutTerminalOutput),
     ("Yazi command line uses bridge identity", YaziCommandLineUsesBridgeIdentity),
     ("Yazi directory command preserves argument boundaries", YaziDirectoryCommandPreservesArgumentBoundaries),
     ("Yazi action command preserves argument boundaries", YaziActionCommandPreservesArgumentBoundaries),
@@ -777,11 +785,293 @@ static void BridgeSessionPublishesCommandCatalog()
     }
 }
 
+static void Phase2Ac138ParserAcceptsValidUtf8Snapshot()
+{
+    var instanceId = Guid.NewGuid();
+    var frame = Frame(
+        instanceId,
+        1,
+        "snapshot",
+        new
+        {
+            tab = 0,
+            cwd = new { kind = "filesystem", value = @"C:\資料 folder" },
+            hovered = new { kind = "filesystem", value = @"C:\資料 folder\emoji-😀.txt" },
+            selected = Array.Empty<object>(),
+        });
+
+    var message = new YaziBridgeMessageParser().Parse(frame, instanceId);
+    Assert(message.Kind == YaziBridgeMessageKind.Snapshot);
+    Assert(message.Sequence == 1);
+}
+
+static void Phase2Ac139ParserAndFrameReaderRejectInvalidFrames()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+
+    Expect<YaziBridgeProtocolException>(() =>
+        parser.Parse(Encoding.UTF8.GetBytes("{\"protocol\":"), instanceId));
+    Expect<YaziBridgeProtocolException>(() =>
+        parser.Parse(new byte[YaziBridgeMessageParser.MaxFrameBytes + 1], instanceId));
+    Expect<YaziBridgeProtocolException>(() => parser.Parse(
+        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+        {
+            protocol = "unsupported/1",
+            instanceId,
+            sequence = 0,
+            kind = "hello",
+            payload = new { },
+        })),
+        instanceId));
+    Expect<YaziBridgeProtocolException>(() => parser.Parse(
+        Frame(Guid.NewGuid(), 0, "hello", new { }),
+        instanceId));
+    Expect<YaziBridgeProtocolException>(() => parser.Parse(
+        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+        {
+            protocol = YaziBridgeMessageParser.SupportedProtocol,
+            instanceId,
+            sequence = 0,
+            kind = "hello",
+        })),
+        instanceId));
+
+    var oversizedFrame = Enumerable.Repeat((byte)'x', YaziBridgeMessageParser.MaxFrameBytes + 1)
+        .Append((byte)'\n')
+        .ToArray();
+    using var connection = new YaziBridgePipeConnection(new MemoryStream(oversizedFrame));
+    Expect<YaziBridgeProtocolException>(() =>
+        connection.ReadFrameAsync().GetAwaiter().GetResult());
+}
+
+static void Phase2Ac140ReducerRejectsInvalidPathKindsAndRequiredFields()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var invalidKindReducer = new YaziBridgeStateReducer(instanceId);
+    invalidKindReducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    Expect<YaziBridgeProtocolException>(() => invalidKindReducer.Apply(parser.Parse(
+        Frame(
+            instanceId,
+            1,
+            "snapshot",
+            new
+            {
+                tab = 0,
+                cwd = new { kind = "virtual", value = "archive://remote" },
+                hovered = (object?)null,
+                selected = Array.Empty<object>(),
+            }),
+        instanceId)));
+    Assert(invalidKindReducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(invalidKindReducer.UnavailableReason == "invalid-snapshot");
+
+    var missingFieldReducer = new YaziBridgeStateReducer(instanceId);
+    missingFieldReducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    Expect<YaziBridgeProtocolException>(() => missingFieldReducer.Apply(parser.Parse(
+        Frame(instanceId, 1, "snapshot", new { tab = 0, hovered = (object?)null, selected = Array.Empty<object>() }),
+        instanceId)));
+    Assert(missingFieldReducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(missingFieldReducer.UnavailableReason == "invalid-snapshot");
+}
+
+static void Phase2Ac141ReducerAcceptsFirstSnapshotAndOrderedEmptySelection()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
+    reducer.Apply(parser.Parse(
+        Frame(
+            instanceId,
+            2,
+            "state",
+            new { present = new[] { "hovered", "selected" }, hovered = (object?)null, selected = Array.Empty<object>() }),
+        instanceId));
+
+    Assert(reducer.Availability == YaziBridgeAvailability.Available);
+    Assert(reducer.State is not null);
+    Assert(reducer.State!.Sequence == 2);
+    Assert(reducer.State.Hovered is null);
+    Assert(reducer.State.Selected.Count == 0);
+}
+
+static void Phase2Ac142ReducerRejectsDuplicateOutOfOrderAndGapUpdates()
+{
+    foreach (var invalidSequence in new ulong[] { 1, 0, 3 })
+    {
+        var instanceId = Guid.NewGuid();
+        var parser = new YaziBridgeMessageParser();
+        var reducer = new YaziBridgeStateReducer(instanceId);
+        reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+        reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
+        reducer.Apply(parser.Parse(StateFrame(instanceId, invalidSequence), instanceId));
+
+        Assert(reducer.Availability == YaziBridgeAvailability.Unavailable);
+        Assert(reducer.State is null);
+        Assert(reducer.UnavailableReason == "sequence-gap");
+    }
+}
+
+static void Phase2Ac143SessionRejectsGoodbyeAndErrorThenRequiresSnapshot()
+{
+    var instanceId = Guid.NewGuid();
+    using var server = new YaziBridgePipeServer(instanceId);
+    var session = new YaziBridgeSession(instanceId, server);
+    var states = new List<YaziBridgeState?>();
+    var reasons = new List<string>();
+    session.StateChanged += state =>
+    {
+        lock (states)
+        {
+            states.Add(state);
+        }
+    };
+    session.Disconnected += reason =>
+    {
+        lock (reasons)
+        {
+            reasons.Add(reason);
+        }
+    };
+    var runTask = session.RunAsync();
+
+    using (var client = ConnectBridgeClient(server.PipeName))
+    {
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 1));
+        SendFrame(client, Frame(instanceId, 2, "goodbye", new { }));
+    }
+    WaitUntil(() => HasReason(reasons, "goodbye"));
+
+    using (var client = ConnectBridgeClient(server.PipeName))
+    {
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 1));
+        SendFrame(client, Frame(instanceId, 2, "error", new { }));
+    }
+    WaitUntil(() => HasReason(reasons, "protocol-error"));
+
+    var nullStateCount = CountNullStates(states);
+    using (var client = ConnectBridgeClient(server.PipeName))
+    {
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, StateFrame(instanceId, 1));
+        WaitUntil(() => CountNullStates(states) > nullStateCount);
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 2));
+        WaitUntil(() => HasStateWithSequence(states, 2));
+    }
+
+    session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    runTask.GetAwaiter().GetResult();
+    Assert(HasStateWithSequence(states, 1));
+    Assert(HasStateWithSequence(states, 2));
+    Assert(HasNullState(states));
+}
+
+static void Phase2Ac144FixturesPreserveCjkSurrogateLongAndRootPaths()
+{
+    var instanceId = Guid.NewGuid();
+    var longPath = @"C:\long\" + new string('x', 32_000) + ".txt";
+    var rootPath = "C:\\";
+    var surrogatePath = @"C:\資料 folder\emoji-😀.txt";
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(
+        Frame(
+            instanceId,
+            1,
+            "snapshot",
+            new
+            {
+                tab = 0,
+                cwd = new { kind = "filesystem", value = rootPath },
+                hovered = new { kind = "filesystem", value = surrogatePath },
+                selected = new[] { new { kind = "filesystem", value = longPath } },
+            }),
+        instanceId));
+
+    Assert(reducer.State is not null);
+    Assert(reducer.State!.Cwd.Value == rootPath);
+    Assert(reducer.State.Hovered?.Value == surrogatePath);
+    Assert(reducer.State.Selected.Single().Value == longPath);
+}
+
+static void Phase2Ac145FixturesPreserveUrlsWithoutTerminalOutput()
+{
+    var instanceId = Guid.NewGuid();
+    var url = "archive://remote/資料 folder/emoji-😀.zip";
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(
+        Frame(
+            instanceId,
+            1,
+            "snapshot",
+            new
+            {
+                tab = 0,
+                cwd = new { kind = "filesystem", value = @"C:\work" },
+                hovered = new { kind = "url", value = url },
+                selected = new[] { new { kind = "url", value = url } },
+            }),
+        instanceId));
+
+    Assert(reducer.State is not null);
+    Assert(reducer.State!.Hovered == new YaziBridgePath(YaziBridgePathKind.Url, url));
+    Assert(reducer.State.Selected.Single() == new YaziBridgePath(YaziBridgePathKind.Url, url));
+}
+
 static void SendFrame(NamedPipeClientStream client, byte[] frame)
 {
     client.Write(frame, 0, frame.Length);
     client.WriteByte((byte)'\n');
     client.Flush();
+}
+
+static NamedPipeClientStream ConnectBridgeClient(string pipeName)
+{
+    var client = new NamedPipeClientStream(
+        ".",
+        pipeName,
+        PipeDirection.InOut,
+        PipeOptions.Asynchronous);
+    client.Connect(5000);
+    return client;
+}
+
+static bool HasReason(IReadOnlyList<string> reasons, string expected)
+{
+    lock (reasons)
+    {
+        return reasons.Contains(expected, StringComparer.Ordinal);
+    }
+}
+
+static bool HasStateWithSequence(IReadOnlyList<YaziBridgeState?> states, ulong sequence)
+{
+    lock (states)
+    {
+        return states.Any(state => state?.Sequence == sequence);
+    }
+}
+
+static bool HasNullState(IReadOnlyList<YaziBridgeState?> states)
+{
+    return CountNullStates(states) > 0;
+}
+
+static int CountNullStates(IReadOnlyList<YaziBridgeState?> states)
+{
+    lock (states)
+    {
+        return states.Count(state => state is null);
+    }
 }
 
 static void WaitUntil(Func<bool> condition)
