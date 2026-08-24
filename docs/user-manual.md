@@ -259,10 +259,10 @@ For example:
       "TerminalForeground": "#FFFFFF",
       "TerminalSelectionBackground": "#1E5AA0",
       "TerminalColorTable": [
-        "#000000", "#000080", "#008000", "#008080",
-        "#800000", "#800080", "#808000", "#C0C0C0",
-        "#808080", "#0000FF", "#00FF00", "#00FFFF",
-        "#FF0000", "#FF00FF", "#FFFF00", "#FFFFFF"
+        "#000000", "#800000", "#008000", "#808000",
+        "#000080", "#800080", "#008080", "#C0C0C0",
+        "#808080", "#FF0000", "#00FF00", "#FFFF00",
+        "#0000FF", "#FF00FF", "#00FFFF", "#FFFFFF"
       ]
     },
     "Light": {

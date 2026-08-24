@@ -1083,6 +1083,25 @@ static void ThemePalettesKeepDistinctModes()
     Assert(light.PaletteSelectionForeground == new RgbColor(253, 246, 227));
     Assert(dark.TerminalColorTable.Count == 16);
     Assert(light.TerminalColorTable.Count == 16);
+    Assert(dark.TerminalColorTable.SequenceEqual(
+    [
+        new RgbColor(0, 0, 0),
+        new RgbColor(128, 0, 0),
+        new RgbColor(0, 128, 0),
+        new RgbColor(128, 128, 0),
+        new RgbColor(0, 0, 128),
+        new RgbColor(128, 0, 128),
+        new RgbColor(0, 128, 128),
+        new RgbColor(192, 192, 192),
+        new RgbColor(128, 128, 128),
+        new RgbColor(255, 0, 0),
+        new RgbColor(0, 255, 0),
+        new RgbColor(255, 255, 0),
+        new RgbColor(0, 0, 255),
+        new RgbColor(255, 0, 255),
+        new RgbColor(0, 255, 255),
+        new RgbColor(255, 255, 255),
+    ]));
     Assert(light.TerminalColorTable[0] == new RgbColor(7, 54, 66));
     Assert(light.TerminalColorTable[15] == new RgbColor(253, 246, 227));
 }
