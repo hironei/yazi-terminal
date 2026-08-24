@@ -13,11 +13,12 @@ Yazi plugin compatibility.
 
 - The current terminal backend is `EasyWindowsTerminalControl` 1.0.38.
 - CJK display, keyboard input, Japanese IME conversion, mouse reporting,
-  resize, alternate-screen rendering, and 24-bit color passed the current
-  Windows/Yazi validation.
+  resize, alternate-screen rendering, and 24-bit color passed a historical
+  pinned Windows/Yazi fixture; they are not a current-plugin live validation.
 - Explorer/Desktop drag-and-drop is supported in the validated directions;
   Yazi and Windows Shell remain responsible for file-operation semantics.
-- The product target is Windows x64. The validated Yazi/`ya` fixture is 26.5.6.
+- The product target is Windows x64. The historical validated Yazi/`ya` fixture
+  is 26.5.6; see the compatibility evidence for current artifact/source status.
 
 ## User installation
 
@@ -27,9 +28,10 @@ Yazi plugin compatibility.
 - .NET 10 Windows Desktop runtime for the framework-dependent release archive
 - `yazi.exe` and its paired `ya.exe`
 
-The current compatibility boundary is the exact Windows, Yazi, and `ya` fixture
-recorded in the archived compatibility evidence. x86 and ARM64 are not product
-targets.
+The compatibility boundary is the historical exact Windows, Yazi, and `ya`
+fixture recorded in the archived compatibility evidence. Current release
+artifact inspection and source/plugin identity are recorded separately; x86 and
+ARM64 are not product targets.
 
 Download the latest Windows x64 archive from the
 [GitHub Releases](https://github.com/hironei/yazi-terminal/releases), extract
@@ -43,7 +45,8 @@ manual, the MIT `LICENSE`, and the optional bridge plugin.
 The optional `yazi-desktop-host.yazi` bridge plugin publishes Yazi's current
 directory, hovered item, and selection to Yazi Terminal. It is required for the
 host's bridge-backed Shell targeting and Explorer drag-and-drop behavior.
-The current validated fixture is Yazi/`ya` 26.5.6.
+The historical validated fixture is Yazi/`ya` 26.5.6. Current plugin/live-Yazi
+validation status is recorded separately in the compatibility evidence.
 
 Use one of the following installation methods.
 
