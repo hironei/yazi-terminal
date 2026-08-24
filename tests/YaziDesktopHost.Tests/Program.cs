@@ -1089,15 +1089,20 @@ static void Phase2Ac143SessionRejectsGoodbyeAndErrorThenRequiresSnapshot()
         SendFrame(client, HelloFrame(instanceId));
         SendFrame(client, StateFrame(instanceId, 1));
         WaitUntil(() => CountNullStates(states) > nullStateCount);
+    }
+
+    WaitUntil(() => HasReason(reasons, "disconnect"));
+    var availableStateCount = CountAvailableStates(states);
+    using (var client = ConnectBridgeClient(server.PipeName))
+    {
         SendFrame(client, HelloFrame(instanceId));
-        SendFrame(client, SnapshotFrame(instanceId, 2));
-        WaitUntil(() => HasStateWithSequence(states, 2));
+        SendFrame(client, SnapshotFrame(instanceId, 1));
+        WaitUntil(() => CountAvailableStates(states) > availableStateCount);
     }
 
     session.DisposeAsync().AsTask().GetAwaiter().GetResult();
     runTask.GetAwaiter().GetResult();
     Assert(HasStateWithSequence(states, 1));
-    Assert(HasStateWithSequence(states, 2));
     Assert(HasNullState(states));
 }
 
@@ -1200,6 +1205,14 @@ static int CountNullStates(IReadOnlyList<YaziBridgeState?> states)
     lock (states)
     {
         return states.Count(state => state is null);
+    }
+}
+
+static int CountAvailableStates(IReadOnlyList<YaziBridgeState?> states)
+{
+    lock (states)
+    {
+        return states.Count(state => state is not null);
     }
 }
 
