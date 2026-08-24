@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "releaseState": "blocked",
+  "releaseBlocker": "CI.Microsoft.Terminal.Wpf 1.25.260303002 has no package license/notice or repository provenance sufficient to confirm binary redistribution.",
+  "requiredArchiveFiles": [
+    "LICENSE",
+    "README.md",
+    "docs/user-manual.md",
+    "yazi-desktop-host.yazi/LICENSE",
+    "yazi-desktop-host.yazi/README.md",
+    "THIRD-PARTY-NOTICES.md",
+    "third-party/EasyWindowsTerminalControl-MIT.txt",
+    "third-party/Microsoft-Windows-Console-ConPTY-MIT.txt"
+  ],
+  "requiredNoticeFiles": [
+    {
+      "path": "THIRD-PARTY-NOTICES.md",
+      "requiredText": [
+        "CI.Microsoft.Terminal.Wpf 1.25.260303002 — RELEASE BLOCKED",
+        "do not publish"
+      ]
+    },
+    {
+      "path": "third-party/EasyWindowsTerminalControl-MIT.txt",
+      "requiredText": [
+        "EasyWindowsTerminalControl 1.0.38",
+        "Copyright (c) 2026 MitchCapper",
+        "MIT License"
+      ]
+    },
+    {
+      "path": "third-party/Microsoft-Windows-Console-ConPTY-MIT.txt",
+      "requiredText": [
+        "Microsoft.Windows.Console.ConPTY 1.24.260710001",
+        "Copyright (c) Microsoft Corporation. All rights reserved.",
+        "MIT License"
+      ]
+    }
+  ],
+  "packages": [
+    {
+      "id": "EasyWindowsTerminalControl",
+      "version": "1.0.38",
+      "status": "declared",
+      "evidence": "Package nuspec: license expression MIT; repository https://github.com/MitchCapper/EasyWindowsTerminalControl at 0741a4b8853c47bcac4412d005ed4ae1d96d2c13.",
+      "assets": [
+        "EasyWindowsTerminalControl.dll"
+      ],
+      "noticeFiles": [
+        "third-party/EasyWindowsTerminalControl-MIT.txt"
+      ]
+    },
+    {
+      "id": "Microsoft.Windows.Console.ConPTY",
+      "version": "1.24.260710001",
+      "status": "declared",
+      "evidence": "Package nuspec: license expression MIT; project URL https://github.com/microsoft/terminal.",
+      "assets": [
+        "conpty.dll"
+      ],
+      "noticeFiles": [
+        "third-party/Microsoft-Windows-Console-ConPTY-MIT.txt"
+      ]
+    },
+    {
+      "id": "CI.Microsoft.Terminal.Wpf",
+      "version": "1.25.260303002",
+      "status": "blocked",
+      "evidence": "Package nuspec has no license expression, license URL/file, or repository URL; the nupkg has no LICENSE or NOTICE entry.",
+      "assets": [
+        "Microsoft.Terminal.Wpf.dll",
+        "Microsoft.Terminal.Control.dll"
+      ],
+      "noticeFiles": []
+    }
+  ]
+}

@@ -1,5 +1,12 @@
 # Yazi Windows GUI Frontend Design
 
+> **Superseded for binary distribution by Issue #21.** This historical v1
+> decision allowed the CI repackage as a recorded supply-chain risk. The later
+> release audit found that no version-specific repackage license/notice path
+> was evidenced in the published package, so new binary distribution is now
+> blocked until that evidence and the required notices are recorded. See
+> `design-issue21-third-party-redistribution.md`.
+
 ## Design status
 
 This is the Phase 1 design for the initial empty repository. It intentionally
