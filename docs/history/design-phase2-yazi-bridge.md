@@ -111,10 +111,12 @@ sequence, message ordering, and snapshot requirements. Neither layer resolves
 or executes paths. A later Shell adapter may reject `Url` values and perform
 its own path validation immediately before invoking a Shell API.
 
-The reducer is monotonic: it accepts a snapshot for the pending instance,
-then exactly-next sequence updates. Any gap transitions to `Unavailable` and
-discards the actionable state. Reconnection starts at the handshake and must
-deliver a new snapshot before returning to `Available`.
+The reducer is monotonic per pipe connection: it accepts `hello`, then one
+snapshot, and then exactly-next sequence messages. Any gap, duplicate,
+decrease, or out-of-order snapshot transitions to `Unavailable` and discards
+the actionable state for that connection. Reconnection resets this counter, so
+`hello: 0` followed by `snapshot: 1` is accepted on the replacement connection
+before it returns to `Available`.
 
 ## Yazi adapter
 

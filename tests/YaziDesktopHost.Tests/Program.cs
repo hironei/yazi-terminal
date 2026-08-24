@@ -32,6 +32,9 @@ var tests = new (string Name, Action Test)[]
     ("bridge parser rejects a wrong instance", BridgeParserRejectsWrongInstance),
     ("bridge reducer applies an ordered update", BridgeReducerAppliesOrderedUpdate),
     ("bridge reducer invalidates a sequence gap", BridgeReducerInvalidatesSequenceGap),
+    ("bridge reducer rejects duplicate snapshots", BridgeReducerRejectsDuplicateSnapshots),
+    ("bridge reducer rejects a decreasing snapshot", BridgeReducerRejectsDecreasingSnapshot),
+    ("bridge reducer rejects a snapshot before hello", BridgeReducerRejectsSnapshotBeforeHello),
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
@@ -601,6 +604,46 @@ static void BridgeReducerInvalidatesSequenceGap()
 
     Assert(reducer.State is null);
     Assert(reducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(reducer.UnavailableReason == "sequence-gap");
+}
+
+static void BridgeReducerRejectsDuplicateSnapshots()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 2), instanceId));
+
+    Assert(reducer.State is null);
+    Assert(reducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(reducer.UnavailableReason == "duplicate-snapshot");
+}
+
+static void BridgeReducerRejectsDecreasingSnapshot()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 0), instanceId));
+
+    Assert(reducer.State is null);
+    Assert(reducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(reducer.UnavailableReason == "sequence-gap");
+}
+
+static void BridgeReducerRejectsSnapshotBeforeHello()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 0), instanceId));
+
+    Assert(reducer.State is null);
+    Assert(reducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(reducer.UnavailableReason == "handshake-required");
 }
 
 static void BridgeReducerRequiresFreshSnapshot()
@@ -611,13 +654,12 @@ static void BridgeReducerRequiresFreshSnapshot()
     reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
     reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
     reducer.MarkDisconnected();
-    reducer.Apply(parser.Parse(StateFrame(instanceId, 2), instanceId));
 
     Assert(reducer.State is null);
     reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
-    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 10), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
     Assert(reducer.State is not null);
-    Assert(reducer.State!.Sequence == 10);
+    Assert(reducer.State!.Sequence == 1);
 }
 
 static void BridgePipeRoundTripsFrame()
