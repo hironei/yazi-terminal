@@ -58,6 +58,7 @@ var tests = new (string Name, Action Test)[]
     ("command palette includes Yazi commands", CommandPaletteIncludesYaziCommands),
     ("Yazi theme loader reads the selected flavor", YaziThemeLoaderReadsSelectedFlavor),
     ("theme palettes keep dark defaults and distinct light colors", ThemePalettesKeepDistinctModes),
+    ("theme palette settings override Yazi colors", ThemePaletteSettingsOverrideYaziColors),
 };
 
 var failures = new List<string>();
@@ -1081,20 +1082,102 @@ static void ThemePalettesKeepDistinctModes()
     Assert(light.TerminalColorTable[15] == new RgbColor(253, 246, 227));
 }
 
+static void ThemePaletteSettingsOverrideYaziColors()
+{
+    var table = Enumerable.Range(0, 16)
+        .Select(index => new RgbColor((byte)(index + 10), (byte)(index + 20), (byte)(index + 30)))
+        .ToArray();
+    var overrides = new ThemeColorOverrides(
+        new RgbColor(1, 2, 3),
+        new RgbColor(4, 5, 6),
+        new RgbColor(7, 8, 9),
+        new RgbColor(10, 11, 12),
+        new RgbColor(13, 14, 15),
+        new RgbColor(16, 17, 18),
+        new RgbColor(19, 20, 21),
+        new RgbColor(22, 23, 24),
+        new RgbColor(25, 26, 27),
+        new RgbColor(28, 29, 30),
+        new RgbColor(31, 32, 33),
+        table);
+    var yazi = new YaziThemeColors(
+        new RgbColor(100, 101, 102),
+        new RgbColor(103, 104, 105),
+        new RgbColor(106, 107, 108),
+        new RgbColor(109, 110, 111),
+        "test-light",
+        TerminalBackground: new RgbColor(112, 113, 114));
+
+    var colors = ThemePalette.For(AppThemeMode.Light, yazi, overrides);
+
+    Assert(colors.HostBackground == new RgbColor(1, 2, 3));
+    Assert(colors.HostForeground == new RgbColor(4, 5, 6));
+    Assert(colors.PaletteBackground == new RgbColor(7, 8, 9));
+    Assert(colors.PaletteForeground == new RgbColor(10, 11, 12));
+    Assert(colors.PaletteBorder == new RgbColor(13, 14, 15));
+    Assert(colors.PaletteInputBackground == new RgbColor(16, 17, 18));
+    Assert(colors.PaletteSelectionBackground == new RgbColor(19, 20, 21));
+    Assert(colors.PaletteSelectionForeground == new RgbColor(22, 23, 24));
+    Assert(colors.TerminalBackground == new RgbColor(25, 26, 27));
+    Assert(colors.TerminalForeground == new RgbColor(28, 29, 30));
+    Assert(colors.TerminalSelectionBackground == new RgbColor(31, 32, 33));
+    Assert(colors.TerminalColorTable.SequenceEqual(table));
+}
+
 static void HostSettingsRoundTripAndRejectsUnsupportedValues()
 {
     var path = Path.Combine(Path.GetTempPath(), $"yazi-settings-test-{Guid.NewGuid():N}.json");
     try
     {
-        var expected = new HostSettings(AppThemeMode.Light, "Consolas", 18);
+        var darkTable = Enumerable.Range(0, 16)
+            .Select(index => new RgbColor((byte)index, (byte)(index + 1), (byte)(index + 2)))
+            .ToArray();
+        var expected = new HostSettings(
+            AppThemeMode.Light,
+            "Consolas",
+            18,
+            new ThemeColorOverrides(
+                HostBackground: new RgbColor(1, 2, 3),
+                TerminalColorTable: darkTable),
+            new ThemeColorOverrides(
+                PaletteSelectionBackground: new RgbColor(4, 5, 6)));
         HostSettingsStore.Save(expected, path);
         var actual = HostSettingsStore.Load(path);
 
-        Assert(actual == expected);
+        Assert(actual.ThemeMode == expected.ThemeMode);
+        Assert(actual.FontFamily == expected.FontFamily);
+        Assert(actual.FontSize == expected.FontSize);
+        Assert(actual.DarkColors?.HostBackground == new RgbColor(1, 2, 3));
+        Assert(actual.DarkColors?.TerminalColorTable?.SequenceEqual(darkTable) == true);
+        Assert(actual.LightColors?.PaletteSelectionBackground == new RgbColor(4, 5, 6));
 
-        File.WriteAllText(path, "{\"Theme\":\"Light\",\"FontFamily\":\"Not Installed\",\"FontSize\":99}");
+        File.WriteAllText(
+            path,
+            """
+            {
+              "Theme": "Light",
+              "FontFamily": "Not Installed",
+              "FontSize": 99,
+              "ThemeColors": {
+                "Dark": {
+                  "HostBackground": "#010203",
+                  "HostForeground": 123,
+                  "TerminalColorTable": ["#010203"]
+                },
+                "Light": {
+                  "TerminalForeground": "#AABBCC"
+                }
+              }
+            }
+            """);
         var fallback = HostSettingsStore.Load(path);
-        Assert(fallback == HostSettings.Defaults with { ThemeMode = AppThemeMode.Light });
+        Assert(fallback.ThemeMode == AppThemeMode.Light);
+        Assert(fallback.FontFamily == HostSettingsCatalog.DefaultFontFamily);
+        Assert(fallback.FontSize == HostSettingsCatalog.DefaultFontSize);
+        Assert(fallback.DarkColors?.HostBackground == new RgbColor(1, 2, 3));
+        Assert(fallback.DarkColors?.HostForeground is null);
+        Assert(fallback.DarkColors?.TerminalColorTable is null);
+        Assert(fallback.LightColors?.TerminalForeground == new RgbColor(170, 187, 204));
     }
     finally
     {

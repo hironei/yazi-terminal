@@ -33,6 +33,8 @@ public partial class MainWindow : Window
     private AppThemeMode _themeMode;
     private string _fontFamily = HostSettingsCatalog.DefaultFontFamily;
     private int _fontSize = HostSettingsCatalog.DefaultFontSize;
+    private ThemeColorOverrides? _darkThemeColors;
+    private ThemeColorOverrides? _lightThemeColors;
     private bool _isCommandPaletteOpen;
     private string? _yaziClientId;
     private string? _yaExecutable;
@@ -71,6 +73,8 @@ public partial class MainWindow : Window
         _themeMode = settings.ThemeMode;
         _fontFamily = settings.FontFamily;
         _fontSize = settings.FontSize;
+        _darkThemeColors = settings.DarkColors;
+        _lightThemeColors = settings.LightColors;
         InitializeComponent();
         if (!_lastInstanceServer.Start())
         {
@@ -97,7 +101,7 @@ public partial class MainWindow : Window
     private void ApplyTheme(AppThemeMode mode)
     {
         _themeMode = mode;
-        var colors = ThemePalette.For(mode, YaziThemeLoader.Load(mode));
+        var colors = GetThemeColors(mode);
         Resources["HostBackgroundBrush"] = CreateBrush(colors.HostBackground);
         Resources["HostForegroundBrush"] = CreateBrush(colors.HostForeground);
         Resources["TerminalBackgroundBrush"] = CreateBrush(colors.TerminalBackground);
@@ -116,7 +120,7 @@ public partial class MainWindow : Window
         try
         {
             var palette = new CommandPaletteWindow(
-                ThemePalette.For(_themeMode, YaziThemeLoader.Load(_themeMode)),
+                GetThemeColors(_themeMode),
                 CommandPaletteCommands.WithYaziCommands(_bridgeSession?.Commands ?? Array.Empty<YaziBridgeCommand>()))
             {
                 Owner = this,
@@ -266,7 +270,7 @@ public partial class MainWindow : Window
                 WorkingDirectory = _initialDirectory,
                 ConPTYTerm = _term,
                 Theme = CreateTerminalTheme(
-                    ThemePalette.For(_themeMode, YaziThemeLoader.Load(_themeMode))),
+                    GetThemeColors(_themeMode)),
                 FontFamilyWhenSettingTheme = new FontFamily(_fontFamily),
                 FontSizeWhenSettingTheme = _fontSize,
                 Win32InputMode = true,
@@ -384,16 +388,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_themeMode == settings.ThemeMode
-            && string.Equals(_fontFamily, settings.FontFamily, StringComparison.Ordinal)
-            && _fontSize == settings.FontSize)
-        {
-            return;
-        }
-
         _themeMode = settings.ThemeMode;
         _fontFamily = settings.FontFamily;
         _fontSize = settings.FontSize;
+        _darkThemeColors = settings.DarkColors;
+        _lightThemeColors = settings.LightColors;
         ApplyTheme(_themeMode);
         AppLogger.Log("settings_reloaded");
     }
@@ -1193,7 +1192,20 @@ public partial class MainWindow : Window
 
     private void SaveSettings()
     {
-        HostSettingsStore.Save(new HostSettings(_themeMode, _fontFamily, _fontSize));
+        HostSettingsStore.Save(new HostSettings(
+            _themeMode,
+            _fontFamily,
+            _fontSize,
+            _darkThemeColors,
+            _lightThemeColors));
+    }
+
+    private ThemeColors GetThemeColors(AppThemeMode mode)
+    {
+        return ThemePalette.For(
+            mode,
+            YaziThemeLoader.Load(mode),
+            mode == AppThemeMode.Dark ? _darkThemeColors : _lightThemeColors);
     }
 
     private static SolidColorBrush CreateBrush(RgbColor color)
