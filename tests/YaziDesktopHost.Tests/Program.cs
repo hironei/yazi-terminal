@@ -26,26 +26,43 @@ var tests = new (string Name, Action Test)[]
     ("last-instance control pipe accepts a directory request", LastInstanceControlPipeAcceptsDirectoryRequest),
     ("last-instance control pipe accepts a file request", LastInstanceControlPipeAcceptsFileRequest),
     ("last-instance control pipe returns a negative ACK", LastInstanceControlPipeReturnsNegativeAcknowledgement),
+    ("path requests serialize startup file open and last-instance ACK", PathRequestsSerializeStartupFileOpenAndLastInstanceAcknowledgement),
     ("bridge parser accepts a CJK snapshot", BridgeParserAcceptsCjkSnapshot),
     ("bridge parser accepts a command catalog", BridgeParserAcceptsCommandCatalog),
+    ("bridge parser preserves command run sequence", BridgeParserPreservesCommandRunSequence),
     ("bridge parser rejects an invalid command catalog", BridgeParserRejectsInvalidCommandCatalog),
     ("bridge parser rejects a wrong instance", BridgeParserRejectsWrongInstance),
     ("bridge reducer applies an ordered update", BridgeReducerAppliesOrderedUpdate),
     ("bridge reducer invalidates a sequence gap", BridgeReducerInvalidatesSequenceGap),
+    ("bridge reducer rejects duplicate snapshots", BridgeReducerRejectsDuplicateSnapshots),
+    ("bridge reducer rejects a decreasing snapshot", BridgeReducerRejectsDecreasingSnapshot),
+    ("bridge reducer rejects a snapshot before hello", BridgeReducerRejectsSnapshotBeforeHello),
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("bridge session publishes command catalog", BridgeSessionPublishesCommandCatalog),
+    ("Phase 2 AC 138 parser accepts valid UTF-8 snapshot", Phase2Ac138ParserAcceptsValidUtf8Snapshot),
+    ("Phase 2 AC 139 parser and frame reader reject invalid frames", Phase2Ac139ParserAndFrameReaderRejectInvalidFrames),
+    ("Phase 2 AC 140 reducer rejects invalid path kinds and required fields", Phase2Ac140ReducerRejectsInvalidPathKindsAndRequiredFields),
+    ("Phase 2 AC 141 reducer accepts first snapshot and ordered empty selection", Phase2Ac141ReducerAcceptsFirstSnapshotAndOrderedEmptySelection),
+    ("Phase 2 AC 142 reducer rejects duplicate out-of-order and gap updates", Phase2Ac142ReducerRejectsDuplicateOutOfOrderAndGapUpdates),
+    ("Phase 2 AC 143 session rejects goodbye and error then requires a snapshot", Phase2Ac143SessionRejectsGoodbyeAndErrorThenRequiresSnapshot),
+    ("Phase 2 AC 144 fixtures preserve CJK surrogate long and root paths", Phase2Ac144FixturesPreserveCjkSurrogateLongAndRootPaths),
+    ("Phase 2 AC 145 fixtures preserve URLs without terminal output", Phase2Ac145FixturesPreserveUrlsWithoutTerminalOutput),
     ("Yazi command line uses bridge identity", YaziCommandLineUsesBridgeIdentity),
     ("Yazi directory command preserves argument boundaries", YaziDirectoryCommandPreservesArgumentBoundaries),
     ("Yazi action command preserves argument boundaries", YaziActionCommandPreservesArgumentBoundaries),
+    ("Yazi action sequence preserves binding order", YaziActionSequencePreservesBindingOrder),
     ("Yazi settings reveal command preserves the Windows path", YaziSettingsRevealCommandPreservesWindowsPath),
     ("Yazi file opener reveals then opens the configured opener", YaziFileOpenerUsesRevealAndOpen),
     ("Yazi action tokenizer handles quoted arguments", YaziActionTokenizerHandlesQuotedArguments),
     ("Yazi action tokenizer rejects unterminated quotes", YaziActionTokenizerRejectsUnterminatedQuotes),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
+    ("host settings catalog matches the documented font options", HostSettingsCatalogMatchesDocumentedFontOptions),
     ("host settings round trip and reject unsupported values", HostSettingsRoundTripAndRejectsUnsupportedValues),
-    ("Yazi exit policy distinguishes normal and abnormal exits", YaziExitPolicyDistinguishesNormalAndAbnormalExits),
+    ("Yazi exit policy distinguishes known normal and abnormal exits", YaziExitPolicyDistinguishesKnownNormalAndAbnormalExits),
+    ("Yazi exit policy preserves unknown process-monitor exits", YaziExitPolicyPreservesUnknownProcessMonitorExit),
+    ("Yazi exit policy preserves unknown terminal-marker exits", YaziExitPolicyPreservesUnknownTerminalMarkerExit),
     ("shell target prefers selected paths", ShellTargetPrefersSelectedPaths),
     ("shell target preserves multiple selection", ShellTargetPreservesMultipleSelection),
     ("shell target falls back to hovered path", ShellTargetFallsBackToHoveredPath),
@@ -56,8 +73,13 @@ var tests = new (string Name, Action Test)[]
     ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
     ("shell context IContextMenu3 forwards LRESULT", ShellContextMenu3ForwardsLresult),
     ("shell context IContextMenu3 failure remains unhandled", ShellContextMenu3FailureRemainsUnhandled),
+    ("shell context menu does not enumerate menu text for logging", ShellContextMenuDoesNotEnumerateMenuTextForLogging),
     ("command palette filters theme commands", CommandPaletteFiltersThemeCommands),
     ("command palette includes Yazi commands", CommandPaletteIncludesYaziCommands),
+    ("palette navigation handles empty lists and selection boundaries", PaletteNavigationHandlesEmptyListsAndSelectionBoundaries),
+    ("palette navigation wraps at first and last rows", PaletteNavigationWrapsAtFirstAndLastRows),
+    ("palette navigation uses j and k only for empty queries", PaletteNavigationUsesJAndKOnlyForEmptyQueries),
+    ("palette navigation leaves filter text input unhandled", PaletteNavigationLeavesFilterTextInputUnhandled),
     ("Yazi theme loader reads the selected flavor", YaziThemeLoaderReadsSelectedFlavor),
     ("theme palettes keep dark defaults and distinct light colors", ThemePalettesKeepDistinctModes),
     ("theme palette settings override Yazi colors", ThemePaletteSettingsOverrideYaziColors),
@@ -509,6 +531,59 @@ static void LastInstanceControlPipeReturnsNegativeAcknowledgement()
     }
 }
 
+static void PathRequestsSerializeStartupFileOpenAndLastInstanceAcknowledgement()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-path-transaction-");
+    try
+    {
+        var registry = new LastInstanceRegistry(
+            Path.Combine(directory.FullName, "last.json"),
+            $@"Local\yazi-test-{Guid.NewGuid():N}");
+        using var server = new LastInstanceControlServer(registry);
+        var controller = new DelayedPathTransactionController();
+        var sequencer = new YaziPathRequestSequencer(controller);
+        server.RequestReceived += (request, cancellationToken) => sequencer.ExecuteAsync(
+            request.Command switch
+            {
+                LastInstanceControlCommand.ChangeDirectory =>
+                    new YaziPathRequest(YaziPathRequestKind.ChangeDirectory, request.Path),
+                LastInstanceControlCommand.OpenFile =>
+                    new YaziPathRequest(YaziPathRequestKind.OpenFile, request.Path),
+                _ => throw new ArgumentOutOfRangeException(nameof(request)),
+            },
+            cancellationToken);
+        Assert(server.Start());
+        Assert(registry.TryRead(out var endpoint));
+
+        var startupOpen = sequencer.ExecuteAsync(new YaziPathRequest(
+            YaziPathRequestKind.OpenFile,
+            @"C:\work\A.txt"));
+        Assert(controller.OpenRevealStarted.Wait(TimeSpan.FromSeconds(2)));
+
+        var lastInstanceChange = LastInstanceClient.TrySendAsync(
+            endpoint!,
+            new LastInstanceControlRequest(
+                @"C:\work\B",
+                LastInstanceControlCommand.ChangeDirectory),
+            TimeSpan.FromSeconds(2));
+        Assert(!lastInstanceChange.IsCompleted);
+        Assert(controller.Operations.SequenceEqual(["reveal A"]));
+
+        controller.AllowOpen();
+        Assert(startupOpen.GetAwaiter().GetResult());
+        Assert(controller.ChangeDirectoryStarted.Wait(TimeSpan.FromSeconds(2)));
+        Assert(!lastInstanceChange.IsCompleted);
+        Assert(controller.Operations.SequenceEqual(["reveal A", "open A", "cd B"]));
+
+        controller.AllowChangeDirectory();
+        Assert(lastInstanceChange.GetAwaiter().GetResult());
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
+    }
+}
+
 static void BridgeParserAcceptsCjkSnapshot()
 {
     var instanceId = Guid.NewGuid();
@@ -544,6 +619,27 @@ static void BridgeParserAcceptsCommandCatalog()
     Assert(commands.Count == 2);
     Assert(commands[0] == new YaziBridgeCommand("g d", "cd C:\\work", "Go work"));
     Assert(commands[1].Run == "quit");
+}
+
+static void BridgeParserPreservesCommandRunSequence()
+{
+    using var document = JsonDocument.Parse("""
+        {
+          "commands": [
+            {
+              "key": "g d",
+              "run": "cd C:\\work",
+              "runs": ["cd C:\\work", "plugin refresh"],
+              "description": "Go work and refresh"
+            }
+          ]
+        }
+        """);
+
+    var command = new YaziBridgeCommandCatalogParser().Parse(document.RootElement).Single();
+
+    Assert(command.ActionSequence.SequenceEqual(["cd C:\\work", "plugin refresh"]));
+    Assert(command.DisplayRun == "cd C:\\work → plugin refresh");
 }
 
 static void BridgeParserRejectsInvalidCommandCatalog()
@@ -603,6 +699,46 @@ static void BridgeReducerInvalidatesSequenceGap()
 
     Assert(reducer.State is null);
     Assert(reducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(reducer.UnavailableReason == "sequence-gap");
+}
+
+static void BridgeReducerRejectsDuplicateSnapshots()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 2), instanceId));
+
+    Assert(reducer.State is null);
+    Assert(reducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(reducer.UnavailableReason == "duplicate-snapshot");
+}
+
+static void BridgeReducerRejectsDecreasingSnapshot()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 0), instanceId));
+
+    Assert(reducer.State is null);
+    Assert(reducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(reducer.UnavailableReason == "sequence-gap");
+}
+
+static void BridgeReducerRejectsSnapshotBeforeHello()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 0), instanceId));
+
+    Assert(reducer.State is null);
+    Assert(reducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(reducer.UnavailableReason == "handshake-required");
 }
 
 static void BridgeReducerRequiresFreshSnapshot()
@@ -613,13 +749,12 @@ static void BridgeReducerRequiresFreshSnapshot()
     reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
     reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
     reducer.MarkDisconnected();
-    reducer.Apply(parser.Parse(StateFrame(instanceId, 2), instanceId));
 
     Assert(reducer.State is null);
     reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
-    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 10), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
     Assert(reducer.State is not null);
-    Assert(reducer.State!.Sequence == 10);
+    Assert(reducer.State!.Sequence == 1);
 }
 
 static void BridgePipeRoundTripsFrame()
@@ -779,11 +914,293 @@ static void BridgeSessionPublishesCommandCatalog()
     }
 }
 
+static void Phase2Ac138ParserAcceptsValidUtf8Snapshot()
+{
+    var instanceId = Guid.NewGuid();
+    var frame = Frame(
+        instanceId,
+        1,
+        "snapshot",
+        new
+        {
+            tab = 0,
+            cwd = new { kind = "filesystem", value = @"C:\資料 folder" },
+            hovered = new { kind = "filesystem", value = @"C:\資料 folder\emoji-😀.txt" },
+            selected = Array.Empty<object>(),
+        });
+
+    var message = new YaziBridgeMessageParser().Parse(frame, instanceId);
+    Assert(message.Kind == YaziBridgeMessageKind.Snapshot);
+    Assert(message.Sequence == 1);
+}
+
+static void Phase2Ac139ParserAndFrameReaderRejectInvalidFrames()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+
+    Expect<YaziBridgeProtocolException>(() =>
+        parser.Parse(Encoding.UTF8.GetBytes("{\"protocol\":"), instanceId));
+    Expect<YaziBridgeProtocolException>(() =>
+        parser.Parse(new byte[YaziBridgeMessageParser.MaxFrameBytes + 1], instanceId));
+    Expect<YaziBridgeProtocolException>(() => parser.Parse(
+        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+        {
+            protocol = "unsupported/1",
+            instanceId,
+            sequence = 0,
+            kind = "hello",
+            payload = new { },
+        })),
+        instanceId));
+    Expect<YaziBridgeProtocolException>(() => parser.Parse(
+        Frame(Guid.NewGuid(), 0, "hello", new { }),
+        instanceId));
+    Expect<YaziBridgeProtocolException>(() => parser.Parse(
+        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+        {
+            protocol = YaziBridgeMessageParser.SupportedProtocol,
+            instanceId,
+            sequence = 0,
+            kind = "hello",
+        })),
+        instanceId));
+
+    var oversizedFrame = Enumerable.Repeat((byte)'x', YaziBridgeMessageParser.MaxFrameBytes + 1)
+        .Append((byte)'\n')
+        .ToArray();
+    using var connection = new YaziBridgePipeConnection(new MemoryStream(oversizedFrame));
+    Expect<YaziBridgeProtocolException>(() =>
+        connection.ReadFrameAsync().GetAwaiter().GetResult());
+}
+
+static void Phase2Ac140ReducerRejectsInvalidPathKindsAndRequiredFields()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var invalidKindReducer = new YaziBridgeStateReducer(instanceId);
+    invalidKindReducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    Expect<YaziBridgeProtocolException>(() => invalidKindReducer.Apply(parser.Parse(
+        Frame(
+            instanceId,
+            1,
+            "snapshot",
+            new
+            {
+                tab = 0,
+                cwd = new { kind = "virtual", value = "archive://remote" },
+                hovered = (object?)null,
+                selected = Array.Empty<object>(),
+            }),
+        instanceId)));
+    Assert(invalidKindReducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(invalidKindReducer.UnavailableReason == "invalid-snapshot");
+
+    var missingFieldReducer = new YaziBridgeStateReducer(instanceId);
+    missingFieldReducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    Expect<YaziBridgeProtocolException>(() => missingFieldReducer.Apply(parser.Parse(
+        Frame(instanceId, 1, "snapshot", new { tab = 0, hovered = (object?)null, selected = Array.Empty<object>() }),
+        instanceId)));
+    Assert(missingFieldReducer.Availability == YaziBridgeAvailability.Unavailable);
+    Assert(missingFieldReducer.UnavailableReason == "invalid-snapshot");
+}
+
+static void Phase2Ac141ReducerAcceptsFirstSnapshotAndOrderedEmptySelection()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
+    reducer.Apply(parser.Parse(
+        Frame(
+            instanceId,
+            2,
+            "state",
+            new { present = new[] { "hovered", "selected" }, hovered = (object?)null, selected = Array.Empty<object>() }),
+        instanceId));
+
+    Assert(reducer.Availability == YaziBridgeAvailability.Available);
+    Assert(reducer.State is not null);
+    Assert(reducer.State!.Sequence == 2);
+    Assert(reducer.State.Hovered is null);
+    Assert(reducer.State.Selected.Count == 0);
+}
+
+static void Phase2Ac142ReducerRejectsDuplicateOutOfOrderAndGapUpdates()
+{
+    foreach (var invalidSequence in new ulong[] { 1, 0, 3 })
+    {
+        var instanceId = Guid.NewGuid();
+        var parser = new YaziBridgeMessageParser();
+        var reducer = new YaziBridgeStateReducer(instanceId);
+        reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+        reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
+        reducer.Apply(parser.Parse(StateFrame(instanceId, invalidSequence), instanceId));
+
+        Assert(reducer.Availability == YaziBridgeAvailability.Unavailable);
+        Assert(reducer.State is null);
+        Assert(reducer.UnavailableReason == "sequence-gap");
+    }
+}
+
+static void Phase2Ac143SessionRejectsGoodbyeAndErrorThenRequiresSnapshot()
+{
+    var instanceId = Guid.NewGuid();
+    using var server = new YaziBridgePipeServer(instanceId);
+    var session = new YaziBridgeSession(instanceId, server);
+    var states = new List<YaziBridgeState?>();
+    var reasons = new List<string>();
+    session.StateChanged += state =>
+    {
+        lock (states)
+        {
+            states.Add(state);
+        }
+    };
+    session.Disconnected += reason =>
+    {
+        lock (reasons)
+        {
+            reasons.Add(reason);
+        }
+    };
+    var runTask = session.RunAsync();
+
+    using (var client = ConnectBridgeClient(server.PipeName))
+    {
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 1));
+        SendFrame(client, Frame(instanceId, 2, "goodbye", new { }));
+    }
+    WaitUntil(() => HasReason(reasons, "goodbye"));
+
+    using (var client = ConnectBridgeClient(server.PipeName))
+    {
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 1));
+        SendFrame(client, Frame(instanceId, 2, "error", new { }));
+    }
+    WaitUntil(() => HasReason(reasons, "protocol-error"));
+
+    var nullStateCount = CountNullStates(states);
+    using (var client = ConnectBridgeClient(server.PipeName))
+    {
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, StateFrame(instanceId, 1));
+        WaitUntil(() => CountNullStates(states) > nullStateCount);
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 2));
+        WaitUntil(() => HasStateWithSequence(states, 2));
+    }
+
+    session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    runTask.GetAwaiter().GetResult();
+    Assert(HasStateWithSequence(states, 1));
+    Assert(HasStateWithSequence(states, 2));
+    Assert(HasNullState(states));
+}
+
+static void Phase2Ac144FixturesPreserveCjkSurrogateLongAndRootPaths()
+{
+    var instanceId = Guid.NewGuid();
+    var longPath = @"C:\long\" + new string('x', 32_000) + ".txt";
+    var rootPath = "C:\\";
+    var surrogatePath = @"C:\資料 folder\emoji-😀.txt";
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(
+        Frame(
+            instanceId,
+            1,
+            "snapshot",
+            new
+            {
+                tab = 0,
+                cwd = new { kind = "filesystem", value = rootPath },
+                hovered = new { kind = "filesystem", value = surrogatePath },
+                selected = new[] { new { kind = "filesystem", value = longPath } },
+            }),
+        instanceId));
+
+    Assert(reducer.State is not null);
+    Assert(reducer.State!.Cwd.Value == rootPath);
+    Assert(reducer.State.Hovered?.Value == surrogatePath);
+    Assert(reducer.State.Selected.Single().Value == longPath);
+}
+
+static void Phase2Ac145FixturesPreserveUrlsWithoutTerminalOutput()
+{
+    var instanceId = Guid.NewGuid();
+    var url = "archive://remote/資料 folder/emoji-😀.zip";
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(
+        Frame(
+            instanceId,
+            1,
+            "snapshot",
+            new
+            {
+                tab = 0,
+                cwd = new { kind = "filesystem", value = @"C:\work" },
+                hovered = new { kind = "url", value = url },
+                selected = new[] { new { kind = "url", value = url } },
+            }),
+        instanceId));
+
+    Assert(reducer.State is not null);
+    Assert(reducer.State!.Hovered == new YaziBridgePath(YaziBridgePathKind.Url, url));
+    Assert(reducer.State.Selected.Single() == new YaziBridgePath(YaziBridgePathKind.Url, url));
+}
+
 static void SendFrame(NamedPipeClientStream client, byte[] frame)
 {
     client.Write(frame, 0, frame.Length);
     client.WriteByte((byte)'\n');
     client.Flush();
+}
+
+static NamedPipeClientStream ConnectBridgeClient(string pipeName)
+{
+    var client = new NamedPipeClientStream(
+        ".",
+        pipeName,
+        PipeDirection.InOut,
+        PipeOptions.Asynchronous);
+    client.Connect(5000);
+    return client;
+}
+
+static bool HasReason(IReadOnlyList<string> reasons, string expected)
+{
+    lock (reasons)
+    {
+        return reasons.Contains(expected, StringComparer.Ordinal);
+    }
+}
+
+static bool HasStateWithSequence(IReadOnlyList<YaziBridgeState?> states, ulong sequence)
+{
+    lock (states)
+    {
+        return states.Any(state => state?.Sequence == sequence);
+    }
+}
+
+static bool HasNullState(IReadOnlyList<YaziBridgeState?> states)
+{
+    return CountNullStates(states) > 0;
+}
+
+static int CountNullStates(IReadOnlyList<YaziBridgeState?> states)
+{
+    lock (states)
+    {
+        return states.Count(state => state is null);
+    }
 }
 
 static void WaitUntil(Func<bool> condition)
@@ -836,6 +1253,18 @@ static void YaziActionCommandPreservesArgumentBoundaries()
         "--",
         "powershell.exe",
         "--block"]));
+}
+
+static void YaziActionSequencePreservesBindingOrder()
+{
+    var startInfos = YaziCommandController.CreateStartInfos(
+        @"C:\tools\ya.exe",
+        "12345",
+        ["cd \"C:\\work folder\"", "plugin refresh"]);
+
+    Assert(startInfos.Count == 2);
+    Assert(startInfos[0].ArgumentList.SequenceEqual(["emit-to", "12345", "cd", @"C:\work folder"]));
+    Assert(startInfos[1].ArgumentList.SequenceEqual(["emit-to", "12345", "plugin", "refresh"]));
 }
 
 static void YaziSettingsRevealCommandPreservesWindowsPath()
@@ -944,11 +1373,34 @@ static void BridgeEnvironmentScopeRestoresValues()
     }
 }
 
-static void YaziExitPolicyDistinguishesNormalAndAbnormalExits()
+static void YaziExitPolicyDistinguishesKnownNormalAndAbnormalExits()
 {
-    Assert(YaziProcessExitPolicy.IsNormalExit(0));
-    Assert(!YaziProcessExitPolicy.IsNormalExit(1));
-    Assert(!YaziProcessExitPolicy.IsNormalExit(-1));
+    var normal = YaziProcessExitPolicy.FromProcessMonitor(0);
+    var positiveFailure = YaziProcessExitPolicy.FromProcessMonitor(1);
+    var negativeFailure = YaziProcessExitPolicy.FromProcessMonitor(-1);
+
+    Assert(normal == new YaziProcessExit.Known(0));
+    Assert(YaziProcessExitPolicy.Classify(normal) == YaziProcessExitClassification.Normal);
+    Assert(YaziProcessExitPolicy.Classify(positiveFailure) == YaziProcessExitClassification.Abnormal);
+    Assert(YaziProcessExitPolicy.Classify(negativeFailure) == YaziProcessExitClassification.Abnormal);
+}
+
+static void YaziExitPolicyPreservesUnknownProcessMonitorExit()
+{
+    var exit = YaziProcessExitPolicy.FromProcessMonitor(null);
+
+    Assert(exit is YaziProcessExit.Unknown);
+    Assert(YaziProcessExitPolicy.Classify(exit) == YaziProcessExitClassification.Unknown);
+    Assert(!YaziProcessExitPolicy.IsNormalExit(exit));
+}
+
+static void YaziExitPolicyPreservesUnknownTerminalMarkerExit()
+{
+    var exit = YaziProcessExitPolicy.FromTerminalMarker(null);
+
+    Assert(exit is YaziProcessExit.Unknown);
+    Assert(YaziProcessExitPolicy.Classify(exit) == YaziProcessExitClassification.Unknown);
+    Assert(!YaziProcessExitPolicy.IsNormalExit(exit));
 }
 
 static void ShellTargetPrefersSelectedPaths()
@@ -1115,6 +1567,17 @@ static void ShellContextMenu3FailureRemainsUnhandled()
     Assert(handler.MenuMsgCallCount == 0);
 }
 
+static void ShellContextMenuDoesNotEnumerateMenuTextForLogging()
+{
+    var serviceType = typeof(WindowsShellContextMenuService);
+    var privateMethods = serviceType.GetMethods(BindingFlags.NonPublic | BindingFlags.Static);
+    var privateFields = serviceType.GetFields(BindingFlags.NonPublic | BindingFlags.Static);
+
+    Assert(!privateMethods.Any(method => method.Name == "LogMenuItems"));
+    Assert(!privateMethods.Any(method => method.Name == "GetMenuItemInfo"));
+    Assert(!privateFields.Any(field => field.Name == "MiimString"));
+}
+
 static void ThemePalettesKeepDistinctModes()
 {
     var dark = ThemePalette.For(AppThemeMode.Dark);
@@ -1135,6 +1598,25 @@ static void ThemePalettesKeepDistinctModes()
     Assert(light.PaletteSelectionForeground == new RgbColor(253, 246, 227));
     Assert(dark.TerminalColorTable.Count == 16);
     Assert(light.TerminalColorTable.Count == 16);
+    Assert(dark.TerminalColorTable.SequenceEqual(
+    [
+        new RgbColor(0, 0, 0),
+        new RgbColor(128, 0, 0),
+        new RgbColor(0, 128, 0),
+        new RgbColor(128, 128, 0),
+        new RgbColor(0, 0, 128),
+        new RgbColor(128, 0, 128),
+        new RgbColor(0, 128, 128),
+        new RgbColor(192, 192, 192),
+        new RgbColor(128, 128, 128),
+        new RgbColor(255, 0, 0),
+        new RgbColor(0, 255, 0),
+        new RgbColor(255, 255, 0),
+        new RgbColor(0, 0, 255),
+        new RgbColor(255, 0, 255),
+        new RgbColor(0, 255, 255),
+        new RgbColor(255, 255, 255),
+    ]));
     Assert(light.TerminalColorTable[0] == new RgbColor(7, 54, 66));
     Assert(light.TerminalColorTable[15] == new RgbColor(253, 246, 227));
 }
@@ -1281,6 +1763,18 @@ static void HostSettingsRoundTripAndRejectsUnsupportedValues()
     }
 }
 
+static void HostSettingsCatalogMatchesDocumentedFontOptions()
+{
+    Assert(HostSettingsCatalog.FontFamilies.SequenceEqual([
+        "MS Gothic",
+        "Consolas",
+        "Cascadia Mono",
+        "Cascadia Code"]));
+    Assert(HostSettingsCatalog.FontSizes.SequenceEqual([12, 14, 16, 18, 20]));
+    Assert(HostSettingsCatalog.DefaultFontFamily == "MS Gothic");
+    Assert(HostSettingsCatalog.DefaultFontSize == 14);
+}
+
 static void YaziThemeLoaderReadsSelectedFlavor()
 {
     var configHome = Path.Combine(Path.GetTempPath(), $"yazi-theme-test-{Guid.NewGuid():N}");
@@ -1357,13 +1851,52 @@ static void CommandPaletteFiltersThemeCommands()
 static void CommandPaletteIncludesYaziCommands()
 {
     var commands = CommandPaletteCommands.WithYaziCommands([
-        new YaziBridgeCommand("g d", "cd C:\\work", "Go work"),
+        new YaziBridgeCommand(
+            "g d",
+            "cd C:\\work",
+            "Go work",
+            ["cd C:\\work", "plugin refresh"]),
     ]);
 
     Assert(commands.Count == 4);
     Assert(commands[^1].Id == PaletteCommandId.YaziAction);
     Assert(commands[^1].Title == "Yazi: Go work");
-    Assert(CommandPaletteCommands.Filter(commands, "C:\\work").Single().YaziCommand?.Run == "cd C:\\work");
+    var yaziCommand = CommandPaletteCommands.Filter(commands, "plugin refresh").Single().YaziCommand;
+    Assert(yaziCommand?.ActionSequence.SequenceEqual(["cd C:\\work", "plugin refresh"]) == true);
+}
+
+static void PaletteNavigationHandlesEmptyListsAndSelectionBoundaries()
+{
+    Assert(PaletteNavigation.NextIndex(0, -1, 1) == -1);
+    Assert(PaletteNavigation.NextIndex(0, -1, -1) == -1);
+    Assert(PaletteNavigation.NextIndex(3, -1, 1) == 0);
+    Assert(PaletteNavigation.NextIndex(3, -1, -1) == 2);
+    Assert(PaletteNavigation.NextIndex(3, -1, 0) == -1);
+}
+
+static void PaletteNavigationWrapsAtFirstAndLastRows()
+{
+    Assert(PaletteNavigation.NextIndex(3, 0, -1) == 2);
+    Assert(PaletteNavigation.NextIndex(3, 2, 1) == 0);
+    Assert(PaletteNavigation.NextIndex(3, 1, 1) == 2);
+    Assert(PaletteNavigation.NextIndex(3, 1, -1) == 0);
+}
+
+static void PaletteNavigationUsesJAndKOnlyForEmptyQueries()
+{
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.J, true, string.Empty) == 1);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.K, true, "   ") == -1);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.J, false, string.Empty) is null);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.K, true, "theme") is null);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.Down, false, "theme") == 1);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.Up, false, "theme") == -1);
+}
+
+static void PaletteNavigationLeavesFilterTextInputUnhandled()
+{
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.Other, true, string.Empty) is null);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.J, true, "j") is null);
+    Assert(PaletteNavigation.TryGetMoveOffset(PaletteNavigationKey.K, true, "dark") is null);
 }
 
 static void AssertDeclaredMethods(Type declaringType, string nestedTypeName, params string[] expectedNames)
@@ -1491,5 +2024,56 @@ sealed class FakeShellContextMenuMessageHandler : IShellContextMenuMessageHandle
         LastLParam = lParam;
         hResult = MenuMsgHResult;
         return HandlesMenuMsg;
+    }
+}
+
+sealed class DelayedPathTransactionController : IYaziPathTransactionController
+{
+    private readonly TaskCompletionSource _openRelease = new();
+    private readonly TaskCompletionSource _changeDirectoryRelease = new();
+    private readonly List<string> _operations = [];
+
+    public ManualResetEventSlim OpenRevealStarted { get; } = new();
+
+    public ManualResetEventSlim ChangeDirectoryStarted { get; } = new();
+
+    public IReadOnlyList<string> Operations
+    {
+        get
+        {
+            lock (_operations)
+            {
+                return _operations.ToArray();
+            }
+        }
+    }
+
+    public async Task<bool> ChangeDirectoryAsync(string directory, CancellationToken cancellationToken)
+    {
+        AddOperation("cd B");
+        ChangeDirectoryStarted.Set();
+        await _changeDirectoryRelease.Task.WaitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<bool> OpenFileAsync(string filePath, CancellationToken cancellationToken)
+    {
+        AddOperation("reveal A");
+        OpenRevealStarted.Set();
+        await _openRelease.Task.WaitAsync(cancellationToken);
+        AddOperation("open A");
+        return true;
+    }
+
+    public void AllowOpen() => _openRelease.SetResult();
+
+    public void AllowChangeDirectory() => _changeDirectoryRelease.SetResult();
+
+    private void AddOperation(string operation)
+    {
+        lock (_operations)
+        {
+            _operations.Add(operation);
+        }
     }
 }

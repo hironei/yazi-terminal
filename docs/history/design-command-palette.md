@@ -16,11 +16,16 @@ are always present. When the bridge session has a catalog, each reported Yazi
 action is projected to a `Yazi: ...` palette command while retaining its
 original key binding, description, and `run` string for execution.
 
-The bridge plugin adds an optional `commands` array to the existing `hello`
-payload. Each item contains `key`, `run`, and `description`. This keeps the
-existing `yazi-desktop-host/1` protocol and remains compatible with older
-hosts, which already ignore additional hello properties. The host validates
-the optional catalog and drops it on disconnect.
+The bridge plugin reads only `[[mgr.prepend_keymap]]` and
+`[[mgr.append_keymap]]`, because Palette execution targets Yazi manager actions.
+It adds an optional `commands` array to the existing `hello` payload. Each item
+contains `key`, `run`, `runs`, and `description`: `run` is the first action for
+compatibility, while `runs` preserves a scalar run as one entry or every string
+in a TOML run array in source order. Unsupported contexts and bindings without
+a usable run are excluded. This keeps the existing `yazi-desktop-host/1`
+protocol and remains compatible with older hosts, which already ignore
+additional hello properties. The host validates the optional catalog and drops
+it on disconnect.
 
 The paired `ya.exe` is used for execution with:
 
@@ -28,12 +33,15 @@ The paired `ya.exe` is used for execution with:
 ya emit-to <client-id> <action> <args...>
 ```
 
-The host tokenizes the keymap `run` string only for action/argument boundaries
-(single and double quotes, with conservative backslash handling) and passes
-the resulting tokens through `ProcessStartInfo.ArgumentList`. It never invokes
-a host shell. Therefore Yazi remains responsible for interpreting actions
-such as `shell` and `plugin`, matching the behavior of `ya.manager_emit` used
-by the reference plugin.
+The host validates every run before execution, tokenizes each string only for
+action/argument boundaries (single and double quotes, with conservative
+backslash handling), and passes the resulting tokens through
+`ProcessStartInfo.ArgumentList`. A multi-run binding creates one sequential
+`ya emit-to` process per run, preserving source order and stopping on failure;
+no later action executes after a malformed or failed earlier action. It never
+invokes a host shell. Therefore Yazi remains responsible for interpreting
+actions such as `shell` and `plugin`, matching the behavior of
+`ya.manager_emit` used by the reference plugin.
 
 ## Input routing
 
@@ -76,6 +84,12 @@ flavor so the embedded terminal can match a normal true-color Yazi terminal.
 The host's own visual settings are stored as JSON below
 `%LOCALAPPDATA%\YaziTerminal\settings.json`; only the selected theme,
 supported font family, and font size are persisted.
+The supported families are `MS Gothic`, `Consolas`, `Cascadia Mono`, and
+`Cascadia Code`; the supported sizes are `12`, `14`, `16`, `18`, and `20`.
+`MS Gothic` and `14` are the defaults. When either persisted font property is
+unsupported, loading falls back for that property only and logs
+`settings_font_family_fallback` or `settings_font_size_fallback` in the host
+log, respectively.
 
 The palette applies the current theme colors directly to its own resources at
 construction time; it does not share mutable resource dictionaries with the

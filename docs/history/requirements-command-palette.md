@@ -25,8 +25,11 @@ settings.
 6. Light mode uses a less glaring terminal surface and higher-contrast default
    and ANSI colors than the current near-white palette.
 7. When the bridge plugin reports Yazi keymap actions, the palette displays
-   their descriptions and runs the selected action through the paired `ya`
-   executable and the current Yazi client identity.
+   their descriptions and runs the selected action sequence through the paired
+   `ya` executable and the current Yazi client identity. The supported source
+   sections are `[[mgr.prepend_keymap]]` and `[[mgr.append_keymap]]`; bindings
+   for other Yazi contexts are excluded because `ya emit-to` targets manager
+   actions.
 8. The host documents and logs which Yazi flavor values it consumes. Host
    mappings include the selected flavor, generic foreground, manager border,
    and active-tab colors. Yazi remains responsible for file-type, icon, mode,
@@ -38,7 +41,9 @@ settings.
     families and sizes. It opens the persisted `settings.json` through Yazi's
     configured opener/editor. The selected theme, font family, and font size
     are restored on the next host launch. Valid changes saved while the host
-    is running are applied immediately.
+    is running are applied immediately. Supported font families are `MS Gothic`,
+    `Consolas`, `Cascadia Mono`, and `Cascadia Code`; supported font sizes are
+    `12`, `14`, `16`, `18`, and `20`. The defaults are `MS Gothic` and `14`.
 
 ## Non-functional requirements
 
@@ -66,9 +71,15 @@ settings.
 - A missing bridge, missing `ya.exe`, malformed command catalog, or malformed
   action does not crash the host; theme commands remain usable and the failure
   is logged.
+- A scalar `run` produces one manager action. A `run` string array produces one
+  `ya emit-to` invocation per string in declared order; an empty, malformed, or
+  unsupported binding never executes a partial or re-ordered action sequence.
 - A missing or unsupported Yazi flavor value does not crash the host. The
   documented built-in fallback remains active for values the host does not
   consume.
+- Missing font properties retain their defaults, and unsupported persisted font
+  properties independently fall back to their documented defaults. The host
+  logs a font-specific fallback event so the user can correct the file.
 - The host passes action arguments with `ProcessStartInfo.ArgumentList`, so
   command text is not evaluated by a host shell. The user-selected Yazi action
   may still ask Yazi to run its own `shell` action.
@@ -83,9 +94,10 @@ settings.
 - Typing `light` leaves `Theme: Light`, and `Enter` switches to the improved
   Light palette; `dark` does the same for Dark.
 - `Escape` cancels without a theme change.
-- A bridge hello payload containing command metadata adds searchable Yazi commands,
-  and selecting a simple action sends the exact action/argument tokens to the
-  active Yazi client.
+- A bridge hello payload containing command metadata adds searchable Yazi commands.
+  Selecting a scalar run or a multi-run array sends the exact action/argument
+  token sequence to the active Yazi client in the same order as the source
+  binding.
 - The user manual explicitly distinguishes host-consumed flavor fields from
   flavor fields rendered by Yazi itself, and explains that file/folder color
   matching depends on the Yazi child emitting VT color sequences.

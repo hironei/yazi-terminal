@@ -39,7 +39,7 @@ public partial class MainWindow : Window
     private string? _yaziClientId;
     private string? _yaExecutable;
     private bool _yaziReady;
-    private readonly SemaphoreSlim _directoryRequestGate = new(1, 1);
+    private YaziPathRequestSequencer? _pathRequestSequencer;
     private FileSystemWatcher? _settingsWatcher;
     private DispatcherTimer? _settingsReloadTimer;
 
@@ -156,7 +156,10 @@ public partial class MainWindow : Window
                 return;
             }
 
-            _ = EditSettingsInYaziAsync(_yaExecutable, _yaziClientId, HostSettingsStore.GetPath());
+            _ = ExecutePathRequestAsync(
+                new YaziPathRequest(YaziPathRequestKind.OpenFile, HostSettingsStore.GetPath()),
+                CancellationToken.None,
+                "yazi_settings_edit");
             return;
         }
 
@@ -168,45 +171,17 @@ public partial class MainWindow : Window
             return;
         }
 
-        _ = ExecuteYaziCommandAsync(yaziCommand.Run, _yaExecutable, _yaziClientId);
-    }
-
-    private static async Task EditSettingsInYaziAsync(
-        string yaExecutable,
-        string clientId,
-        string settingsPath)
-    {
-        try
-        {
-            if (!await YaziCommandController.ExecuteAsync(
-                    yaExecutable,
-                    clientId,
-                    $"reveal \"{settingsPath}\"")
-                    .ConfigureAwait(true)
-                || !await YaziCommandController.ExecuteAsync(yaExecutable, clientId, "open")
-                    .ConfigureAwait(true))
-            {
-                AppLogger.Log("yazi_settings_edit_failed");
-            }
-        }
-        catch (ArgumentException exception)
-        {
-            AppLogger.Log("yazi_settings_edit_invalid", exception);
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
-        {
-            AppLogger.Log("yazi_settings_edit_failed", exception);
-        }
+        _ = ExecuteYaziCommandAsync(yaziCommand.ActionSequence, _yaExecutable, _yaziClientId);
     }
 
     private static async Task ExecuteYaziCommandAsync(
-        string run,
+        IReadOnlyList<string> runs,
         string yaExecutable,
         string clientId)
     {
         try
         {
-            if (!await YaziCommandController.ExecuteAsync(yaExecutable, clientId, run)
+            if (!await YaziCommandController.ExecuteAsync(yaExecutable, clientId, runs)
                     .ConfigureAwait(true))
             {
                 AppLogger.Log("yazi_command_failed");
@@ -244,10 +219,13 @@ public partial class MainWindow : Window
         {
             var executable = YaziExecutableResolver.Resolve();
             var launch = YaziProcessLaunchConfiguration.Create(executable);
-            _yaziClientId = launch.ClientId;
+            var yaziClientId = launch.ClientId;
+            _yaziClientId = yaziClientId;
             try
             {
                 _yaExecutable = YaziExecutableResolver.ResolvePairedYa(executable);
+                _pathRequestSequencer = new YaziPathRequestSequencer(
+                    new YaziProcessPathTransactionController(_yaExecutable, yaziClientId));
             }
             catch (YaziExecutableNotFoundException)
             {
@@ -446,96 +424,62 @@ public partial class MainWindow : Window
         LastInstanceControlRequest request,
         CancellationToken cancellationToken)
     {
+        if (_isClosing || !_yaziReady || _pathRequestSequencer is null)
+        {
+            AppLogger.Log("last_instance_request_unavailable");
+            return false;
+        }
+
+        var transaction = request.Command switch
+        {
+            LastInstanceControlCommand.ChangeDirectory =>
+                new YaziPathRequest(YaziPathRequestKind.ChangeDirectory, request.Path),
+            LastInstanceControlCommand.OpenFile =>
+                new YaziPathRequest(YaziPathRequestKind.OpenFile, request.Path),
+            _ => null,
+        };
+
+        if (transaction is null)
+        {
+            return false;
+        }
+
+        ActivateForPathRequest();
+        return await ExecutePathRequestAsync(
+                transaction,
+                cancellationToken)
+                .ConfigureAwait(false);
+    }
+
+    private async Task<bool> ExecutePathRequestAsync(
+        YaziPathRequest transaction,
+        CancellationToken cancellationToken,
+        string operation = "last_instance_request")
+    {
+        if (_isClosing || !_yaziReady || _pathRequestSequencer is null)
+        {
+            AppLogger.Log($"{operation}_unavailable");
+            return false;
+        }
+
         try
         {
-            await _directoryRequestGate.WaitAsync(cancellationToken).ConfigureAwait(true);
-            try
+            var succeeded = await _pathRequestSequencer.ExecuteAsync(transaction, cancellationToken)
+                .ConfigureAwait(false);
+            if (!succeeded && !_isClosing)
             {
-                if (_isClosing || !_yaziReady || _yaziClientId is null || _yaExecutable is null)
-                {
-                    AppLogger.Log("last_instance_request_unavailable");
-                    return false;
-                }
+                AppLogger.Log($"{operation}_failed");
+            }
 
-                ActivateForPathRequest();
-                return request.Command switch
-                {
-                    LastInstanceControlCommand.ChangeDirectory =>
-                        await ChangeDirectoryAsync(request.Path, cancellationToken).ConfigureAwait(false),
-                    LastInstanceControlCommand.OpenFile =>
-                        await OpenFileAsync(request.Path, cancellationToken).ConfigureAwait(false),
-                    _ => false,
-                };
-            }
-            finally
-            {
-                _directoryRequestGate.Release();
-            }
+            return succeeded;
         }
         catch (OperationCanceledException)
         {
             return false;
         }
-    }
-
-    private async Task<bool> ChangeDirectoryAsync(
-        string directory,
-        CancellationToken cancellationToken)
-    {
-        if (_yaziClientId is null || _yaExecutable is null)
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Win32Exception)
         {
-            AppLogger.Log("last_instance_directory_unavailable");
-            return false;
-        }
-
-        try
-        {
-            var succeeded = await YaziDirectoryController.ChangeDirectoryAsync(
-                _yaExecutable,
-                _yaziClientId,
-                directory,
-                cancellationToken).ConfigureAwait(false);
-            if (!succeeded && !_isClosing)
-            {
-                AppLogger.Log("last_instance_directory_failed");
-            }
-
-            return succeeded;
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
-        {
-            AppLogger.Log("last_instance_directory_failed", exception);
-            return false;
-        }
-    }
-
-    private async Task<bool> OpenFileAsync(
-        string filePath,
-        CancellationToken cancellationToken)
-    {
-        if (_yaziClientId is null || _yaExecutable is null)
-        {
-            AppLogger.Log("last_instance_file_unavailable");
-            return false;
-        }
-
-        try
-        {
-            var succeeded = await YaziFileController.OpenAsync(
-                _yaExecutable,
-                _yaziClientId,
-                filePath,
-                cancellationToken).ConfigureAwait(false);
-            if (!succeeded && !_isClosing)
-            {
-                AppLogger.Log("last_instance_file_open_failed");
-            }
-
-            return succeeded;
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or Win32Exception)
-        {
-            AppLogger.Log("last_instance_file_open_failed", exception);
+            AppLogger.Log($"{operation}_failed", exception);
             return false;
         }
     }
@@ -975,7 +919,10 @@ public partial class MainWindow : Window
         {
             _ = Dispatcher.BeginInvoke(
                 DispatcherPriority.Input,
-                new Action(() => _ = OpenFileAsync(fileToOpen, _processMonitorCancellation.Token)));
+                new Action(() => _ = ExecutePathRequestAsync(
+                    new YaziPathRequest(YaziPathRequestKind.OpenFile, fileToOpen),
+                    _processMonitorCancellation.Token,
+                    "startup_file_open")));
         }
     }
 
@@ -1014,18 +961,19 @@ public partial class MainWindow : Window
                 if (!cancellationToken.IsCancellationRequested)
                 {
                     AppLogger.Log("yazi_process_exit_detected");
-                    int exitCode;
+                    YaziProcessExit exit;
                     try
                     {
-                        exitCode = ReadExitCode(process, systemProcess);
+                        exit = YaziProcessExitPolicy.FromProcessMonitor(
+                            ReadExitCode(process, systemProcess));
                     }
                     catch (Exception exception)
                     {
                         AppLogger.Log("yazi_exit_code_unavailable", exception);
-                        exitCode = 0;
+                        exit = YaziProcessExitPolicy.FromProcessMonitor(null);
                     }
 
-                    Dispatcher.Invoke(() => HandleProcessExit(term, exitCode));
+                    Dispatcher.Invoke(() => HandleProcessExit(term, exit));
                 }
             }
             catch (Exception exception)
@@ -1033,47 +981,55 @@ public partial class MainWindow : Window
                 if (!cancellationToken.IsCancellationRequested)
                 {
                     AppLogger.Log("yazi_exit_observation_failed", exception);
-                    Dispatcher.Invoke(() => HandleUnexpectedExit(term));
+                    Dispatcher.Invoke(() => HandleProcessExit(
+                        term,
+                        YaziProcessExitPolicy.FromProcessMonitor(null)));
                 }
             }
         });
     }
 
-    private void HandleProcessExit(TermPTY term, int? exitCode = null)
+    private void HandleProcessExit(TermPTY term, YaziProcessExit? exit = null)
     {
         if (_isClosing || !ReferenceEquals(_term, term))
         {
             return;
         }
 
-        if (exitCode is null)
+        if (exit is null)
         {
             var process = term.Process;
             if (process is null)
             {
-                HandleUnexpectedExit(term);
-                return;
+                exit = YaziProcessExitPolicy.FromTerminalMarker(null);
             }
-
-            try
+            else
             {
-                if (!process.HasExited)
+                try
                 {
-                    return;
-                }
+                    if (!process.HasExited)
+                    {
+                        return;
+                    }
 
-                exitCode = ReadExitCode(process);
-            }
-            catch (Exception exception)
-            {
-                AppLogger.Log("yazi_exit_code_read_failed", exception);
-                HandleUnexpectedExit(term);
-                return;
+                    exit = YaziProcessExitPolicy.FromTerminalMarker(ReadExitCode(process));
+                }
+                catch (Exception exception)
+                {
+                    AppLogger.Log("yazi_exit_code_read_failed", exception);
+                    exit = YaziProcessExitPolicy.FromTerminalMarker(null);
+                }
             }
         }
 
-        if (!YaziProcessExitPolicy.IsNormalExit(exitCode.Value))
+        var classification = YaziProcessExitPolicy.Classify(exit);
+        if (classification != YaziProcessExitClassification.Normal)
         {
+            if (classification == YaziProcessExitClassification.Unknown)
+            {
+                AppLogger.Log("yazi_exit_code_unknown");
+            }
+
             HandleUnexpectedExit(term);
             return;
         }

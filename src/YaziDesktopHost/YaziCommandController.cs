@@ -40,9 +40,48 @@ public static class YaziCommandController
         string run,
         CancellationToken cancellationToken = default)
     {
+        return await ExecuteAsync(yaExecutable, clientId, [run], cancellationToken).ConfigureAwait(false);
+    }
+
+    public static async Task<bool> ExecuteAsync(
+        string yaExecutable,
+        string clientId,
+        IReadOnlyList<string> runs,
+        CancellationToken cancellationToken = default)
+    {
+        var startInfos = CreateStartInfos(yaExecutable, clientId, runs);
+        foreach (var startInfo in startInfos)
+        {
+            if (!await ExecuteAsync(startInfo, cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static IReadOnlyList<ProcessStartInfo> CreateStartInfos(
+        string yaExecutable,
+        string clientId,
+        IReadOnlyList<string> runs)
+    {
+        ArgumentNullException.ThrowIfNull(runs);
+        if (runs.Count == 0)
+        {
+            throw new ArgumentException("The Yazi action sequence is empty.", nameof(runs));
+        }
+
+        return runs.Select(run => CreateStartInfo(yaExecutable, clientId, run)).ToArray();
+    }
+
+    private static async Task<bool> ExecuteAsync(
+        ProcessStartInfo startInfo,
+        CancellationToken cancellationToken)
+    {
         using var process = new Process
         {
-            StartInfo = CreateStartInfo(yaExecutable, clientId, run),
+            StartInfo = startInfo,
         };
 
         try

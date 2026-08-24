@@ -11,6 +11,9 @@ through the existing `%LOCALAPPDATA%\YaziTerminal\settings.json` file.
 
 1. The existing `Theme`, `FontFamily`, and `FontSize` settings remain
    compatible with settings files that do not contain color configuration.
+   Supported families are `MS Gothic`, `Consolas`, `Cascadia Mono`, and
+   `Cascadia Code`; supported sizes are `12`, `14`, `16`, `18`, and `20`.
+   The defaults are `MS Gothic` and `14`.
 2. Settings may contain independent `Dark` and `Light` color sections under
    `ThemeColors`.
 3. Each section may configure these `#RRGGBB` fields:
@@ -44,9 +47,10 @@ through the existing `%LOCALAPPDATA%\YaziTerminal\settings.json` file.
   built-in/Yazi color.
 - A missing, invalid, or non-16-entry `TerminalColorTable` falls back to the
   effective 16-entry table as a whole.
-- Malformed JSON, inaccessible files, and unsupported existing font settings
-  retain the current all-settings fallback behavior and do not prevent host
-  startup.
+- Malformed JSON and inaccessible files retain the current all-settings
+  fallback behavior and do not prevent host startup. Unsupported persisted font
+  settings fall back independently to their documented defaults and emit a
+  font-specific fallback log event.
 - Theme settings are not applied partially while a settings file is being
   written; the existing reload debounce remains the consistency boundary.
 

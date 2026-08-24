@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <Import Project="..\..\eng\ThirdPartyRedistribution.props" />
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -20,5 +22,21 @@
   <ItemGroup>
     <PackageReference Include="EasyWindowsTerminalControl" Version="1.0.38" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="..\..\third-party\**\*.*" Link="third-party\%(RecursiveDir)%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="RequireThirdPartyRedistributionEvidence" BeforeTargets="PrepareForPublish">
+    <Error Condition="'$(ThirdPartyRedistributionState)' != 'verified'"
+           Text="Binary publish is blocked until third-party redistribution evidence is verified. See eng/third-party/redistribution-manifest.json and Issue #21." />
+  </Target>
 
 </Project>

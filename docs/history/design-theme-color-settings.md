@@ -16,7 +16,7 @@ existing top-level settings are unchanged:
   "ThemeColors": {
     "Dark": {
       "HostBackground": "#000000",
-      "TerminalColorTable": ["#000000", "#000080", "... 14 more ..."]
+      "TerminalColorTable": ["#000000", "#800000", "... 14 more ..."]
     },
     "Light": {}
   }
@@ -26,6 +26,11 @@ existing top-level settings are unchanged:
 JSON color strings are parsed into `RgbColor` values at the persistence
 boundary. `ThemeColorOverrides` holds nullable values so omitted fields remain
 distinguishable from explicit values and can fall back independently.
+The persisted font catalog is `MS Gothic`, `Consolas`, `Cascadia Mono`, and
+`Cascadia Code`, with sizes `12`, `14`, `16`, `18`, and `20`; the defaults are
+`MS Gothic` and `14`. An unsupported persisted family or size falls back for
+that property only and records `settings_font_family_fallback` or
+`settings_font_size_fallback`, respectively.
 
 ## Palette resolution
 

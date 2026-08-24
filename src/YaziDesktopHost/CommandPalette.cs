@@ -56,10 +56,10 @@ internal static class CommandPaletteCommands
         commands.AddRange(yaziCommands.Select(command =>
         {
             var title = string.IsNullOrWhiteSpace(command.Description)
-                ? $"Yazi: {command.Run}"
+                ? $"Yazi: {command.DisplayRun}"
                 : $"Yazi: {command.Description}";
             var key = string.IsNullOrWhiteSpace(command.Key) ? "No key" : command.Key;
-            var description = $"{key}  ·  {command.Run}";
+            var description = $"{key}  ·  {command.DisplayRun}";
             return new CommandPaletteCommand(PaletteCommandId.YaziAction, title, description, command);
         }));
         return commands;
@@ -81,5 +81,51 @@ internal static class CommandPaletteCommands
                 || command.Description.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase)
                 || command.Id.ToString().Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
             .ToArray();
+    }
+}
+
+internal enum PaletteNavigationKey
+{
+    Up,
+    Down,
+    J,
+    K,
+    Other,
+}
+
+internal static class PaletteNavigation
+{
+    public static int? TryGetMoveOffset(
+        PaletteNavigationKey key,
+        bool hasNoModifiers,
+        string? query)
+    {
+        return key switch
+        {
+            PaletteNavigationKey.Down => 1,
+            PaletteNavigationKey.Up => -1,
+            PaletteNavigationKey.J when hasNoModifiers && string.IsNullOrWhiteSpace(query) => 1,
+            PaletteNavigationKey.K when hasNoModifiers && string.IsNullOrWhiteSpace(query) => -1,
+            _ => null,
+        };
+    }
+
+    public static int NextIndex(int itemCount, int selectedIndex, int offset)
+    {
+        if (itemCount <= 0)
+        {
+            return -1;
+        }
+
+        if (offset == 0)
+        {
+            return selectedIndex >= 0 && selectedIndex < itemCount ? selectedIndex : -1;
+        }
+
+        var currentIndex = selectedIndex >= 0 && selectedIndex < itemCount
+            ? selectedIndex
+            : offset > 0 ? -1 : 0;
+        var nextIndex = (currentIndex + offset) % itemCount;
+        return nextIndex < 0 ? nextIndex + itemCount : nextIndex;
     }
 }

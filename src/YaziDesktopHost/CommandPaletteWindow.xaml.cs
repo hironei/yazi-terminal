@@ -61,30 +61,20 @@ internal partial class CommandPaletteWindow : Window
             return;
         }
 
-        if (e.Key == Key.Down)
+        var navigationKey = e.Key switch
         {
-            MoveSelection(1);
-            e.Handled = true;
-            return;
-        }
-
-        if (e.Key == Key.Up)
+            Key.Down => PaletteNavigationKey.Down,
+            Key.Up => PaletteNavigationKey.Up,
+            Key.J => PaletteNavigationKey.J,
+            Key.K => PaletteNavigationKey.K,
+            _ => PaletteNavigationKey.Other,
+        };
+        if (PaletteNavigation.TryGetMoveOffset(
+                navigationKey,
+                Keyboard.Modifiers == ModifierKeys.None,
+                SearchBox.Text) is int offset)
         {
-            MoveSelection(-1);
-            e.Handled = true;
-            return;
-        }
-
-        if (CanUseVimNavigation() && e.Key == Key.J)
-        {
-            MoveSelection(1);
-            e.Handled = true;
-            return;
-        }
-
-        if (CanUseVimNavigation() && e.Key == Key.K)
-        {
-            MoveSelection(-1);
+            MoveSelection(offset);
             e.Handled = true;
         }
     }
@@ -107,29 +97,17 @@ internal partial class CommandPaletteWindow : Window
 
     private void MoveSelection(int offset)
     {
-        if (CommandList.Items.Count == 0)
+        var nextIndex = PaletteNavigation.NextIndex(
+            CommandList.Items.Count,
+            CommandList.SelectedIndex,
+            offset);
+        if (nextIndex < 0)
         {
             return;
         }
 
-        var nextIndex = CommandList.SelectedIndex + offset;
-        if (nextIndex < 0)
-        {
-            nextIndex = CommandList.Items.Count - 1;
-        }
-        else if (nextIndex >= CommandList.Items.Count)
-        {
-            nextIndex = 0;
-        }
-
         CommandList.SelectedIndex = nextIndex;
         CommandList.ScrollIntoView(CommandList.SelectedItem);
-    }
-
-    private bool CanUseVimNavigation()
-    {
-        return Keyboard.Modifiers == ModifierKeys.None
-            && string.IsNullOrWhiteSpace(SearchBox.Text);
     }
 
     private void ExecuteSelectedCommand()

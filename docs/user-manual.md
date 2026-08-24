@@ -13,11 +13,12 @@ Yazi plugin compatibility.
 
 - The current terminal backend is `EasyWindowsTerminalControl` 1.0.38.
 - CJK display, keyboard input, Japanese IME conversion, mouse reporting,
-  resize, alternate-screen rendering, and 24-bit color passed the current
-  Windows/Yazi validation.
+  resize, alternate-screen rendering, and 24-bit color passed a historical
+  pinned Windows/Yazi fixture; they are not a current-plugin live validation.
 - Explorer/Desktop drag-and-drop is supported in the validated directions;
   Yazi and Windows Shell remain responsible for file-operation semantics.
-- The product target is Windows x64. The validated Yazi/`ya` fixture is 26.5.6.
+- The product target is Windows x64. The historical validated Yazi/`ya` fixture
+  is 26.5.6; see the compatibility evidence for current artifact/source status.
 
 ## User installation
 
@@ -27,9 +28,10 @@ Yazi plugin compatibility.
 - .NET 10 Windows Desktop runtime for the framework-dependent release archive
 - `yazi.exe` and its paired `ya.exe`
 
-The current compatibility boundary is the exact Windows, Yazi, and `ya` fixture
-recorded in the archived compatibility evidence. x86 and ARM64 are not product
-targets.
+The compatibility boundary is the historical exact Windows, Yazi, and `ya`
+fixture recorded in the archived compatibility evidence. Current release
+artifact inspection and source/plugin identity are recorded separately; x86 and
+ARM64 are not product targets.
 
 Download the latest Windows x64 archive from the
 [GitHub Releases](https://github.com/hironei/yazi-terminal/releases), extract
@@ -43,7 +45,8 @@ manual, the MIT `LICENSE`, and the optional bridge plugin.
 The optional `yazi-desktop-host.yazi` bridge plugin publishes Yazi's current
 directory, hovered item, and selection to Yazi Terminal. It is required for the
 host's bridge-backed Shell targeting and Explorer drag-and-drop behavior.
-The current validated fixture is Yazi/`ya` 26.5.6.
+The historical validated fixture is Yazi/`ya` 26.5.6. Current plugin/live-Yazi
+validation status is recorded separately in the compatibility evidence.
 
 Use one of the following installation methods.
 
@@ -182,7 +185,18 @@ To edit the terminal font family or font size, select
 `%LOCALAPPDATA%\YaziTerminal\settings.json`, then asks Yazi to reveal and open
 that file using Yazi's configured opener/editor. Edit the JSON values and
 save the file. The file contains `Theme`, `FontFamily`,
-and `FontSize`; unsupported values fall back to the defaults. Add a
+and `FontSize`. The supported font settings are:
+
+| Setting | Allowed values | Default |
+| --- | --- | --- |
+| `FontFamily` | `MS Gothic`, `Consolas`, `Cascadia Mono`, `Cascadia Code` | `MS Gothic` |
+| `FontSize` | `12`, `14`, `16`, `18`, `20` | `14` |
+
+Unsupported values fall back independently to those defaults. To confirm a
+fallback after saving or restarting, check
+`%LOCALAPPDATA%\YaziTerminal\app.log` for
+`settings_font_family_fallback` and/or `settings_font_size_fallback`, then
+replace the value with one from the table. Add a
 `ThemeColors` object to customize Light and Dark independently. Color values
 must be six-digit RGB strings in `#RRGGBB` format. The named fields are
 `HostBackground`, `HostForeground`, `PaletteBackground`, `PaletteForeground`,
@@ -259,10 +273,10 @@ For example:
       "TerminalForeground": "#FFFFFF",
       "TerminalSelectionBackground": "#1E5AA0",
       "TerminalColorTable": [
-        "#000000", "#000080", "#008000", "#008080",
-        "#800000", "#800080", "#808000", "#C0C0C0",
-        "#808080", "#0000FF", "#00FF00", "#00FFFF",
-        "#FF0000", "#FF00FF", "#FFFF00", "#FFFFFF"
+        "#000000", "#800000", "#008000", "#808000",
+        "#000080", "#800080", "#008080", "#C0C0C0",
+        "#808080", "#FF0000", "#00FF00", "#FFFF00",
+        "#0000FF", "#FF00FF", "#00FFFF", "#FFFFFF"
       ]
     },
     "Light": {
@@ -519,11 +533,14 @@ capability first. Invalid or missing theme files do not prevent startup;
 unsupported host mappings use built-in fallbacks.
 
 When the optional `yazi-desktop-host.yazi` bridge plugin is installed, the
-palette also lists actions from the configured Yazi `keymap.toml`, including
-their descriptions and key bindings. Selecting one sends the action to the
-current Yazi instance through `ya emit-to`; plugin and `shell` actions remain
-owned and interpreted by Yazi. The catalog is read when the bridge connects,
-so restart Yazi Terminal after changing the keymap.
+palette also lists manager actions from `[[mgr.prepend_keymap]]` and
+`[[mgr.append_keymap]]` in the configured Yazi `keymap.toml`, including their
+descriptions and key bindings. A scalar `run` sends one action; a string-array
+`run` sends each action in its declared order through `ya emit-to`. Other
+keymap contexts are not listed because the palette targets the current Yazi
+manager. Plugin and `shell` actions remain owned and interpreted by Yazi. The
+catalog is read when the bridge connects, so restart Yazi Terminal after
+changing the keymap.
 
 The embedded terminal supports the normal Yazi interaction path, including:
 
@@ -545,6 +562,10 @@ directions. Ctrl/Shift Copy/Move behavior follows the Windows Shell effect
 negotiation.
 
 ## Diagnostics
+
+The host may write category-level failure diagnostics to
+`%LOCALAPPDATA%\YaziTerminal\app.log`. Shell context-menu item names are not
+read or written to that log.
 
 For the opt-in terminal color fixture, set the following environment variable
 before starting the host:
@@ -574,7 +595,11 @@ Yazi Terminal is released under the [MIT License](../LICENSE).
 
 Third-party dependencies are distributed under their own terms. In particular,
 `EasyWindowsTerminalControl` uses the third-party NuGet package
-`CI.Microsoft.Terminal.Wpf`. The v1 design permits that dependency with a
-recorded supply-chain and maintenance risk; binary distributions must include
-the applicable Microsoft Terminal `LICENSE` and `NOTICE` handling after it has
-been confirmed. See the [dependency decision in the design document](history/design-yazi-windows-gui-frontend.md#dependency-licensing-and-supply-chain-decision).
+`CI.Microsoft.Terminal.Wpf`. The current repackage has no package-local
+license, notice, or repository provenance that confirms binary redistribution.
+Consequently, new binary releases are blocked; this is an engineering release
+gate, not a legal conclusion. See the repository's
+[third-party notices](../THIRD-PARTY-NOTICES.md) for the exact package evidence
+and the existing v0.1.8 remediation policy. An authorized maintainer must
+record the missing evidence and decide whether to replace or withdraw that
+asset before it can be considered remediated.

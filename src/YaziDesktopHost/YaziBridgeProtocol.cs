@@ -29,7 +29,16 @@ public enum YaziBridgeAvailability
 
 public sealed record YaziBridgePath(YaziBridgePathKind Kind, string Value);
 
-public sealed record YaziBridgeCommand(string Key, string Run, string Description);
+public sealed record YaziBridgeCommand(
+    string Key,
+    string Run,
+    string Description,
+    IReadOnlyList<string>? Runs = null)
+{
+    public IReadOnlyList<string> ActionSequence => Runs ?? [Run];
+
+    public string DisplayRun => string.Join(" → ", ActionSequence);
+}
 
 public sealed record YaziBridgeEnvelope(
     string Protocol,
@@ -163,6 +172,7 @@ public sealed class YaziBridgeCommandCatalogParser
 {
     private const int MaxCommands = 512;
     private const int MaxCommandTextLength = 4096;
+    private const int MaxRunsPerCommand = 32;
 
     public IReadOnlyList<YaziBridgeCommand> Parse(JsonElement helloPayload)
     {
@@ -191,13 +201,14 @@ public sealed class YaziBridgeCommandCatalogParser
 
             var key = OptionalString(command, "key");
             var run = RequiredBoundedString(command, "run");
+            var runs = OptionalRunSequence(command, run);
             var description = OptionalString(command, "description") ?? string.Empty;
             if (description.Length > MaxCommandTextLength)
             {
                 throw new YaziBridgeProtocolException("Bridge command description is too long.");
             }
 
-            result.Add(new YaziBridgeCommand(key ?? string.Empty, run, description));
+            result.Add(new YaziBridgeCommand(key ?? string.Empty, run, description, runs));
         }
 
         return result;
@@ -227,6 +238,41 @@ public sealed class YaziBridgeCommandCatalogParser
         }
 
         return value;
+    }
+
+    private static IReadOnlyList<string>? OptionalRunSequence(JsonElement parent, string firstRun)
+    {
+        if (!parent.TryGetProperty("runs", out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind != JsonValueKind.Array
+            || value.GetArrayLength() == 0
+            || value.GetArrayLength() > MaxRunsPerCommand)
+        {
+            throw new YaziBridgeProtocolException("Bridge command run sequence is invalid.");
+        }
+
+        var runs = new List<string>(value.GetArrayLength());
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String
+                || string.IsNullOrWhiteSpace(item.GetString())
+                || item.GetString()!.Length > MaxCommandTextLength)
+            {
+                throw new YaziBridgeProtocolException("Bridge command run sequence is invalid.");
+            }
+
+            runs.Add(item.GetString()!);
+        }
+
+        if (!string.Equals(runs[0], firstRun, StringComparison.Ordinal))
+        {
+            throw new YaziBridgeProtocolException("Bridge command run sequence does not match its first action.");
+        }
+
+        return runs;
     }
 }
 
@@ -422,6 +468,9 @@ public sealed class YaziBridgeStateReducer
     private readonly Guid _instanceId;
     private YaziBridgeState? _state;
     private bool _handshakeCompleted;
+    private bool _snapshotAccepted;
+    private bool _connectionRejected;
+    private ulong? _lastSequence;
 
     public YaziBridgeStateReducer(Guid instanceId)
     {
@@ -441,32 +490,38 @@ public sealed class YaziBridgeStateReducer
             throw new YaziBridgeProtocolException("Bridge instanceId does not match the reducer.");
         }
 
+        if (_connectionRejected || !AcceptSequence(message.Sequence))
+        {
+            return;
+        }
+
         switch (message.Kind)
         {
             case YaziBridgeMessageKind.Hello:
                 if (_handshakeCompleted)
                 {
-                    MarkUnavailable("duplicate-hello");
+                    RejectConnection("duplicate-hello");
                     return;
                 }
 
                 _handshakeCompleted = true;
                 return;
             case YaziBridgeMessageKind.Snapshot:
-                if (!_handshakeCompleted)
+                if (!_handshakeCompleted || _snapshotAccepted)
                 {
-                    MarkUnavailable("handshake-required");
+                    RejectConnection(_handshakeCompleted ? "duplicate-snapshot" : "handshake-required");
                     return;
                 }
 
                 try
                 {
                     _state = ParseSnapshot(message);
+                    _snapshotAccepted = true;
                     UnavailableReason = null;
                 }
                 catch (YaziBridgeProtocolException)
                 {
-                    MarkUnavailable("invalid-snapshot");
+                    RejectConnection("invalid-snapshot");
                     throw;
                 }
 
@@ -487,20 +542,19 @@ public sealed class YaziBridgeStateReducer
 
     public void MarkDisconnected()
     {
-        MarkUnavailable("disconnect");
+        _state = null;
+        _handshakeCompleted = false;
+        _snapshotAccepted = false;
+        _connectionRejected = false;
+        _lastSequence = null;
+        UnavailableReason = "disconnect";
     }
 
     private void ApplyStateUpdate(YaziBridgeEnvelope message)
     {
         if (_state is null || _state.Availability != YaziBridgeAvailability.Available)
         {
-            MarkUnavailable("snapshot-required");
-            return;
-        }
-
-        if (message.Sequence != _state.Sequence + 1)
-        {
-            MarkUnavailable("sequence-gap");
+            RejectConnection("snapshot-required");
             return;
         }
 
@@ -508,7 +562,7 @@ public sealed class YaziBridgeStateReducer
         var present = RequiredStringArray(payload, "present");
         if (present.Count == 0)
         {
-            MarkUnavailable("empty-state-update");
+            RejectConnection("empty-state-update");
             return;
         }
 
@@ -534,7 +588,7 @@ public sealed class YaziBridgeStateReducer
                     selected = ParsePathArray(RequiredProperty(payload, "selected"), "selected");
                     break;
                 default:
-                    MarkUnavailable("unknown-state-field");
+                    RejectConnection("unknown-state-field");
                     return;
             }
         }
@@ -566,8 +620,26 @@ public sealed class YaziBridgeStateReducer
     private void MarkUnavailable(string reason)
     {
         _state = null;
-        _handshakeCompleted = false;
         UnavailableReason = reason;
+    }
+
+    private bool AcceptSequence(ulong sequence)
+    {
+        if (_lastSequence is ulong previous
+            && (previous == ulong.MaxValue || sequence != previous + 1))
+        {
+            RejectConnection("sequence-gap");
+            return false;
+        }
+
+        _lastSequence = sequence;
+        return true;
+    }
+
+    private void RejectConnection(string reason)
+    {
+        MarkUnavailable(reason);
+        _connectionRejected = true;
     }
 
     private static YaziBridgePath ParsePath(JsonElement value, string name)

@@ -61,9 +61,6 @@ public sealed class WindowsShellContextMenuService
     private const uint CmfCanRename = 0x00000010;
     private const uint TpmRetCmd = 0x0100;
     private const uint TpmRightButton = 0x0002;
-    private const uint MiimString = 0x00000040;
-    private const uint MiimSubmenu = 0x00000004;
-    private const uint MiimId = 0x00000002;
     private const int SwShownormal = 1;
     private const int WmInitMenuPopup = 0x0117;
     private const int WmMeasureItem = 0x002C;
@@ -218,8 +215,6 @@ public sealed class WindowsShellContextMenuService
                 CommandLast,
                 CmfExplore | CmfCanRename);
             ThrowIfFailed(queryResult, "IContextMenu.QueryContextMenu");
-            LogMenuItems(menu, 0);
-
             if (source is not null)
             {
                 hook = (IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled) =>
@@ -249,7 +244,6 @@ public sealed class WindowsShellContextMenuService
 
             var commandOffset = command - CommandFirst;
             AppLogger.Log($"shell_context_menu_command_{command}_offset_{commandOffset}");
-            LogMenuItems(menu, 0);
             stage = "invoke_command";
             ThrowIfFailed(InvokeCommand(contextMenu, ownerHwnd, commandOffset), "IContextMenu.InvokeCommand");
             return WindowsShellContextMenuResult.Invoked;
@@ -384,45 +378,6 @@ public sealed class WindowsShellContextMenuService
         }
     }
 
-    private static void LogMenuItems(IntPtr menu, int depth)
-    {
-        if (menu == IntPtr.Zero || depth > 3)
-        {
-            return;
-        }
-
-        var count = GetMenuItemCount(menu);
-        for (var index = 0; index < count; index++)
-        {
-            var textBuffer = Marshal.AllocCoTaskMem(256 * sizeof(char));
-            try
-            {
-                var item = new MENUITEMINFO
-                {
-                    cbSize = (uint)Marshal.SizeOf<MENUITEMINFO>(),
-                    fMask = MiimId | MiimSubmenu | MiimString,
-                    dwTypeData = textBuffer,
-                    cch = 256,
-                };
-                if (!GetMenuItemInfo(menu, (uint)index, true, ref item))
-                {
-                    continue;
-                }
-
-                var text = Marshal.PtrToStringUni(textBuffer) ?? string.Empty;
-                AppLogger.Log($"shell_context_menu_item_depth_{depth}_id_{item.wID}_text_{text}");
-                if (item.hSubMenu != IntPtr.Zero)
-                {
-                    LogMenuItems(item.hSubMenu, depth + 1);
-                }
-            }
-            finally
-            {
-                Marshal.FreeCoTaskMem(textBuffer);
-            }
-        }
-    }
-
     private static void ThrowIfFailed(int hResult, string operation)
     {
         if (hResult < 0)
@@ -464,17 +419,6 @@ public sealed class WindowsShellContextMenuService
         int y,
         IntPtr owner,
         IntPtr parameters);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern int GetMenuItemCount(IntPtr menu);
-
-    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetMenuItemInfo(
-        IntPtr menu,
-        uint item,
-        [MarshalAs(UnmanagedType.Bool)] bool byPosition,
-        ref MENUITEMINFO info);
 
     [ComImport]
     [Guid("000214E6-0000-0000-C000-000000000046")]
@@ -552,20 +496,4 @@ public sealed class WindowsShellContextMenuService
         public IntPtr hIcon;
     }
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct MENUITEMINFO
-    {
-        public uint cbSize;
-        public uint fMask;
-        public uint fType;
-        public uint fState;
-        public uint wID;
-        public IntPtr hSubMenu;
-        public IntPtr hbmpChecked;
-        public IntPtr hbmpUnchecked;
-        public IntPtr dwItemData;
-        public IntPtr dwTypeData;
-        public uint cch;
-        public IntPtr hbmpItem;
-    }
 }
