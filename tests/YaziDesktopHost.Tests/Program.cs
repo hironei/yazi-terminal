@@ -59,6 +59,11 @@ var tests = new (string Name, Action Test)[]
     ("Yazi theme loader reads the selected flavor", YaziThemeLoaderReadsSelectedFlavor),
     ("theme palettes keep dark defaults and distinct light colors", ThemePalettesKeepDistinctModes),
     ("theme palette settings override Yazi colors", ThemePaletteSettingsOverrideYaziColors),
+    ("terminal paste recognizes Ctrl+Shift+V", TerminalPasteRecognizesControlShiftV),
+    ("terminal paste recognizes Shift+Insert", TerminalPasteRecognizesShiftInsert),
+    ("terminal paste rejects other gestures and repeats", TerminalPasteRejectsOtherGesturesAndRepeats),
+    ("terminal paste ignores empty text", TerminalPasteIgnoresEmptyText),
+    ("terminal paste frames Unicode and multiline text", TerminalPasteFramesUnicodeAndMultilineText),
 };
 
 var failures = new List<string>();
@@ -1122,6 +1127,42 @@ static void ThemePaletteSettingsOverrideYaziColors()
     Assert(colors.TerminalForeground == new RgbColor(28, 29, 30));
     Assert(colors.TerminalSelectionBackground == new RgbColor(31, 32, 33));
     Assert(colors.TerminalColorTable.SequenceEqual(table));
+}
+
+static void TerminalPasteRecognizesControlShiftV()
+{
+    Assert(TerminalClipboardPaste.IsPasteShortcut(0x0100, 0x56, true, true, false));
+    Assert(TerminalClipboardPaste.IsPasteShortcut(0x0104, 0x56, true, true, false));
+}
+
+static void TerminalPasteRecognizesShiftInsert()
+{
+    Assert(TerminalClipboardPaste.IsPasteShortcut(0x0100, 0x2D, false, true, false));
+    Assert(TerminalClipboardPaste.IsPasteShortcut(0x0104, 0x2D, false, true, false));
+}
+
+static void TerminalPasteRejectsOtherGesturesAndRepeats()
+{
+    Assert(!TerminalClipboardPaste.IsPasteShortcut(0x0100, 0x56, false, true, false));
+    Assert(!TerminalClipboardPaste.IsPasteShortcut(0x0100, 0x56, true, false, false));
+    Assert(!TerminalClipboardPaste.IsPasteShortcut(0x0100, 0x56, true, true, true));
+    Assert(!TerminalClipboardPaste.IsPasteShortcut(0x0100, 0x2D, true, true, false));
+    Assert(!TerminalClipboardPaste.IsPasteShortcut(0x0100, 0x2D, false, false, false));
+    Assert(!TerminalClipboardPaste.IsPasteShortcut(0x0006, 0x56, true, true, false));
+}
+
+static void TerminalPasteFramesUnicodeAndMultilineText()
+{
+    const string text = "貼り付け\r\nsecond line";
+    Assert(TerminalClipboardPaste.Frame(text)
+        == "\u001b[200~貼り付け\r\nsecond line\u001b[201~");
+}
+
+static void TerminalPasteIgnoresEmptyText()
+{
+    Assert(!TerminalClipboardPaste.HasText(null));
+    Assert(!TerminalClipboardPaste.HasText(string.Empty));
+    Assert(TerminalClipboardPaste.HasText("text"));
 }
 
 static void HostSettingsRoundTripAndRejectsUnsupportedValues()

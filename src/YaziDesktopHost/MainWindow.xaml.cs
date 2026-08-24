@@ -655,6 +655,12 @@ public partial class MainWindow : Window
             _shellDragDrop.HandleMessage(hwnd, message, wParam, ref handled);
         }
 
+        if (TryHandleClipboardPasteShortcut(message, wParam, lParam))
+        {
+            handled = true;
+            return IntPtr.Zero;
+        }
+
         if (TryHandleCommandPaletteShortcut(message, wParam))
         {
             handled = true;
@@ -772,6 +778,11 @@ public partial class MainWindow : Window
             return false;
         }
 
+        if (TryHandleClipboardPasteShortcut(message, wParam, lParam))
+        {
+            return true;
+        }
+
         if (TryHandleCommandPaletteShortcut(message, wParam))
         {
             return true;
@@ -832,6 +843,60 @@ public partial class MainWindow : Window
         }
 
         return false;
+    }
+
+    private bool TryHandleClipboardPasteShortcut(
+        int message,
+        IntPtr wParam,
+        IntPtr lParam)
+    {
+        var isKeyRepeat = (lParam.ToInt64() & (1L << 30)) != 0;
+        if (!TerminalClipboardPaste.IsPasteShortcut(
+                message,
+                wParam.ToInt32(),
+                IsKeyDown(VkControl),
+                IsKeyDown(VkShift),
+                isKeyRepeat))
+        {
+            return false;
+        }
+
+        if (_term is null)
+        {
+            AppLogger.Log("terminal_paste_unavailable_terminal");
+            return true;
+        }
+
+        string text;
+        try
+        {
+            text = Clipboard.GetText(TextDataFormat.UnicodeText);
+        }
+        catch (Exception exception) when (
+            exception is System.Runtime.InteropServices.ExternalException
+                or InvalidOperationException)
+        {
+            AppLogger.Log("terminal_paste_clipboard_read_failed", exception);
+            return true;
+        }
+
+        if (!TerminalClipboardPaste.HasText(text))
+        {
+            AppLogger.Log("terminal_paste_empty");
+            return true;
+        }
+
+        try
+        {
+            _term.WriteToTerm(TerminalClipboardPaste.Frame(text));
+            AppLogger.Log($"terminal_paste_sent_length_{text.Length}");
+        }
+        catch (Exception exception)
+        {
+            AppLogger.Log("terminal_paste_write_failed", exception);
+        }
+
+        return true;
     }
 
     private bool TryHandleCommandPaletteShortcut(int message, IntPtr wParam)
