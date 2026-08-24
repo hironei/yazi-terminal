@@ -16,7 +16,7 @@ existing top-level settings are unchanged:
   "ThemeColors": {
     "Dark": {
       "HostBackground": "#000000",
-      "TerminalColorTable": ["#000000", "#000080", "... 14 more ..."]
+      "TerminalColorTable": ["#000000", "#800000", "... 14 more ..."]
     },
     "Light": {}
   }
