@@ -54,6 +54,7 @@ var tests = new (string Name, Action Test)[]
     ("shell target resolves current directory", ShellTargetResolvesCurrentDirectory),
     ("shell target rejects unavailable, URLs, and empty state", ShellTargetRejectsUnavailableUrlsAndEmptyState),
     ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
+    ("shell context menu does not enumerate menu text for logging", ShellContextMenuDoesNotEnumerateMenuTextForLogging),
     ("command palette filters theme commands", CommandPaletteFiltersThemeCommands),
     ("command palette includes Yazi commands", CommandPaletteIncludesYaziCommands),
     ("Yazi theme loader reads the selected flavor", YaziThemeLoaderReadsSelectedFlavor),
@@ -1061,6 +1062,17 @@ static void ShellContextComInterfacesPreserveNativeVtableOrder()
         "GetCommandString",
         "HandleMenuMsg",
         "HandleMenuMsg2");
+}
+
+static void ShellContextMenuDoesNotEnumerateMenuTextForLogging()
+{
+    var serviceType = typeof(WindowsShellContextMenuService);
+    var privateMethods = serviceType.GetMethods(BindingFlags.NonPublic | BindingFlags.Static);
+    var privateFields = serviceType.GetFields(BindingFlags.NonPublic | BindingFlags.Static);
+
+    Assert(!privateMethods.Any(method => method.Name == "LogMenuItems"));
+    Assert(!privateMethods.Any(method => method.Name == "GetMenuItemInfo"));
+    Assert(!privateFields.Any(field => field.Name == "MiimString"));
 }
 
 static void ThemePalettesKeepDistinctModes()
