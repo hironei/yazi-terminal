@@ -233,6 +233,11 @@ indexes 8-15 are used by bright foreground/background colors (`90`-`97` /
 | 14 | Bright cyan | `96` / `106` |
 | 15 | Bright white | `97` / `107` |
 
+To paste Windows clipboard text into a Yazi input field, press `Ctrl+Shift+V`
+or `Shift+Insert`. Yazi Terminal sends the text using bracketed paste so
+multiline and non-ASCII text remain intact. `Ctrl+V` remains an ordinary
+terminal key and is not treated as a paste shortcut.
+
 For example:
 
 ```json
