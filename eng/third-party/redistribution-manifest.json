@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "releaseState": "blocked",
-  "releaseBlocker": "CI.Microsoft.Terminal.Wpf 1.25.260303002 has no package license/notice or repository provenance sufficient to confirm binary redistribution.",
+  "releaseBlocker": "CI.Microsoft.Terminal.Wpf 1.25.260303002 has a provenance lead (Microsoft Terminal commit and WPF pack pipeline), but no retrievable Microsoft-generated WPF nupkg or managed-DLL hash comparison; binary redistribution remains unverified.",
   "requiredArchiveFiles": [
     "LICENSE",
     "README.md",
@@ -66,7 +66,7 @@
       "id": "CI.Microsoft.Terminal.Wpf",
       "version": "1.25.260303002",
       "status": "blocked",
-      "evidence": "Package nuspec has no license expression, license URL/file, or repository URL; the nupkg has no LICENSE or NOTICE entry.",
+      "evidence": "Package nuspec has no license expression, license URL/file, or repository URL and the nupkg has no LICENSE or NOTICE entry. Provenance evidence (nuspec commit 9ae724aa5b080aafbeea2bbf88db630b182cc802, Microsoft WPF pack pipeline, exact x64 native hash match, official-source LICENSE/NOTICE hashes, and failed official WPF nupkg retrieval) is recorded in docs/history/compatibility-evidence/ci-microsoft-terminal-wpf-1.25.260303002.md and the adjacent SHA-256 inventory; the managed WPF artifact/container remains unverified.",
       "assets": [
         "Microsoft.Terminal.Wpf.dll",
         "Microsoft.Terminal.Control.dll"

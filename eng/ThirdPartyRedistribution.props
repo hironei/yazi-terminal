@@ -1,6 +1,10 @@
 <Project>
   <PropertyGroup>
-    <!-- Change only after an authorized evidence and notice review. -->
+    <!-- Keep blocked: provenance lead is recorded in
+         docs/history/compatibility-evidence/ci-microsoft-terminal-wpf-1.25.260303002.md,
+         but the Microsoft-generated WPF nupkg and managed-DLL hash comparison
+         were not publicly retrievable. Change only after authorized artifact,
+         notice, and version-specific asset review. -->
     <ThirdPartyRedistributionState>blocked</ThirdPartyRedistributionState>
   </PropertyGroup>
 </Project>

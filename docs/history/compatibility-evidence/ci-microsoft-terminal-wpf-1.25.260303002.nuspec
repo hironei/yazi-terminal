@@ -1,0 +1,20 @@
+
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>CI.Microsoft.Terminal.Wpf</id>
+    <version>1.25.260303002</version>
+    <authors>CI2Nuget Repackage Team</authors>
+    <description>Package Description</description>
+    <repository type="git" commit="9ae724aa5b080aafbeea2bbf88db630b182cc802" />
+    <dependencies>
+      <group targetFramework=".NETFramework4.7.2" />
+      <group targetFramework="net8.0-windows7.0" />
+    </dependencies>
+    <frameworkReferences>
+      <group targetFramework="net8.0-windows7.0">
+        <frameworkReference name="Microsoft.WindowsDesktop.App.WPF" />
+      </group>
+      <group targetFramework=".NETFramework4.7.2" />
+    </frameworkReferences>
+  </metadata>
+</package>
