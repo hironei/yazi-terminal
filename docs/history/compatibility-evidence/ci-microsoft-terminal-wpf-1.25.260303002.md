@@ -37,6 +37,33 @@ determination about redistribution of the CI repackage.
   This confirms component/version correspondence, not the provenance of the
   managed WPF DLL or the package container.
 
+## Managed WPF assembly checks
+
+- Neither package `Microsoft.Terminal.Wpf.dll` has a managed PDB. The package
+  contains only the native `Microsoft.Terminal.Control.pdb` files, so a
+  package-level SourceLink record cannot be extracted from the managed DLL.
+- Assembly metadata is consistent with the official project: assembly name
+  `Microsoft.Terminal.Wpf`, assembly version `1.25.0.0`, public key token
+  `f300afd708cefcd3`, company `Microsoft Corporation`, product `Windows
+  Terminal`, file version `1.25.2603.03002`, and product version
+  `1.25.260303002-preview` (both `net8.0-windows` and `net472` assets).
+- The WPF project from commit `9ae724aa5b080aafbeea2bbf88db630b182cc802`
+  was restored and rebuilt with the same target framework and version
+  metadata, using the public Microsoft signing key file referenced by the
+  project. The managed DLL hash is not required to be byte-identical: the
+  independent build is 23,040 bytes / SHA-256
+  `36008D657B439356D6DCE4173F5DBC5E91F40568D8E9A0CE727102D350876245`, while
+  the package is 33,312 bytes / SHA-256
+  `0405F2AF347D5F57135800F79DB322048D768A56B099525B786B2E12D20FB445`.
+  The rebuilt assembly has the same assembly metadata and identical reflection
+  type/method/resource signature inventory (113 entries); its MVID differs as
+  expected for an independent compilation. The reproducible-build PDB was
+  generated locally but contains no GitHub/SourceLink URL.
+- This source-build correlation, the exact native hash match, the matching
+  official CI pack target, and the package's pinned upstream commit provide a
+  reasonable source provenance for the managed assembly without claiming
+  byte-level identity of the separately repackaged nupkg.
+
 ## Official artifact retrieval
 
 - The public Microsoft GitHub release assets for `v1.25.622.0` contain the
@@ -56,7 +83,7 @@ At the same commit, the official source contains `LICENSE` (MIT) and
 `NOTICE.md`. Their captured SHA-256 values are recorded in the TSV inventory:
 
 - `LICENSE`: `5D177F23ECFEB0EA8E050B6A5A16355E1AE9A0B286436CA8F83ED08B3795BE6B`
-- `NOTICE.md`: `E7FBAADEE6AB20C28B87730A510EE5F5815D8FB4BD88D1D54D282DC2A74C072`
+- `NOTICE.md`: `E7FBAADEE6AB20C28B87730A510EE5F5815D8FB4BD88D1D54D282DC2A74C0726`
 
 Sources:
 
@@ -68,9 +95,10 @@ Sources:
 
 ## Determination
 
-The commit and official WPF pipeline provide a **provenance lead / verified
-candidate** for the source and version. The exact Microsoft-generated WPF
-nupkg (or an independently reproducible managed-DLL build) was not obtainable,
-and only the native x64 component hash was matched. Therefore the release
-gate remains **blocked**; this evidence must not be used to mark the CI
-repackage `verified` without an authorized maintainer's artifact-level review.
+The pinned Microsoft commit, official WPF pack pipeline, assembly metadata,
+source rebuild/signing correlation, exact native x64 hash match, and complete
+upstream notice snapshots provide reasonable version-specific provenance for
+the managed and native assets. The CI repackage is therefore a **verified
+candidate** for redistribution under the checked-in upstream MIT `LICENSE` and
+`NOTICE.md` copies. The manifest may move to `verified` only together with
+the release ZIP hash validation that requires those two files.

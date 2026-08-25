@@ -100,6 +100,19 @@ foreach ($requiredFile in @($manifest.requiredArchiveFiles)) {
     }
 }
 
+foreach ($fileHash in @($manifest.requiredFileHashes)) {
+    $hashPath = [string] $fileHash.path
+    $sha256 = [string] $fileHash.sha256
+    if ([string]::IsNullOrWhiteSpace($hashPath) -or
+        -not $requiredArchiveFileSet.Contains($hashPath)) {
+        $problems.Add("Required file hash path '$hashPath' is not listed in requiredArchiveFiles.")
+    }
+
+    if ($sha256 -notmatch '^[0-9A-Fa-f]{64}$') {
+        $problems.Add("Required file hash for '$hashPath' is not a SHA-256 value.")
+    }
+}
+
 if ($null -eq $manifest.requiredNoticeFiles -or $manifest.requiredNoticeFiles.Count -eq 0) {
     $problems.Add('requiredNoticeFiles must identify the notice content to validate.')
 }

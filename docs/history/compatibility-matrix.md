@@ -107,18 +107,18 @@ The fixed package metadata was inspected from the local NuGet cache:
 | --- | --- | --- |
 | `EasyWindowsTerminalControl` `1.0.38` | nuspec license expression `MIT`; upstream commit `0741a4b8853c47bcac4412d005ed4ae1d96d2c13` | Declared package terms; the MIT notice is included in a release-eligible archive. |
 | `Microsoft.Windows.Console.ConPTY` `1.24.260710001` | nuspec license expression `MIT`; Microsoft Terminal project URL | Declared package terms; the MIT notice is included in a release-eligible archive. |
-| `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | Local nuspec has no license expression, license URL, license file, or repository URL; it records only repackage commit `9ae724aa5b080aafbeea2bbf88db630b182cc802`. The [NuGet page](https://www.nuget.org/packages/CI.Microsoft.Terminal.Wpf/1.25.260303002) identifies owner `CI2NugetRepackageTeam` but supplies no license terms. | **BLOCKED**; no new binary archive may be published until version-specific redistribution terms and required notices are confirmed. |
+| `CI.Microsoft.Terminal.Wpf` `1.25.260303002` | The nuspec pins Microsoft Terminal commit `9ae724aa5b080aafbeea2bbf88db630b182cc802`; assembly metadata/source rebuild correlate the managed DLL, and the x64 native DLL hash matches the Microsoft release asset. The full upstream `LICENSE` and `NOTICE.md` are copied and hash-validated. | **VERIFIED** for the engineering release gate; see the [provenance record](compatibility-evidence/ci-microsoft-terminal-wpf-1.25.260303002.md). |
 
-The Microsoft Terminal repository and WPF source identify the upstream code as
-MIT, but that does not by itself establish the license chain for this separate
-CI repackage or its included native binaries. NuGet cache signatures and
-package metadata are not a substitute for a legal redistribution review.
-Issue #21 therefore blocks new binary distribution while retaining the
-dependency only for source/build work; obtain the package publisher's
-version-specific evidence and the exact required `LICENSE`/`NOTICE` files
-before lifting the gate. See the [upstream repository](https://github.com/microsoft/terminal)
-and [WPF source license header](https://github.com/microsoft/terminal/blob/main/src/cascadia/WpfTerminalControl/TerminalControl.xaml.cs)
-for upstream provenance only.
+The initial Issue #21 assessment kept this dependency blocked because the
+repackage had no package-local notices or independently checked source link.
+The follow-up provenance record now includes the official WPF pack pipeline,
+assembly metadata, an independent source build, the exact native hash match,
+and full upstream `LICENSE`/`NOTICE.md` snapshots. This is an engineering
+release-gate decision, not a legal conclusion; NuGet signatures and package
+metadata remain distinct from a legal redistribution review. See the
+[upstream repository](https://github.com/microsoft/terminal) and [WPF source
+project](https://github.com/microsoft/terminal/tree/9ae724aa5b080aafbeea2bbf88db630b182cc802/src/cascadia/WpfTerminalControl)
+for the pinned source.
 
 ## Explicit non-claims
 

@@ -19,7 +19,26 @@ $noticeTextByPath = @{}
 foreach ($notice in @($manifest.requiredNoticeFiles)) {
     $noticeTextByPath[[string] $notice.path] = @($notice.requiredText | ForEach-Object { [string] $_ })
 }
+$expectedHashByPath = @{}
+foreach ($fileHash in @($manifest.requiredFileHashes)) {
+    if (-not [string]::IsNullOrWhiteSpace([string] $fileHash.path)) {
+        $expectedHashByPath[[string] $fileHash.path] = ([string] $fileHash.sha256).ToUpperInvariant()
+    }
+}
+$actualHashByPath = @{}
 $noticeContentByPath = @{}
+
+function Get-StreamSha256 {
+    param([System.IO.Stream] $Stream)
+
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        return ([BitConverter]::ToString($sha256.ComputeHash($Stream)) -replace '-', '')
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
 
 if ($PSCmdlet.ParameterSetName -eq 'Directory') {
     if (-not (Test-Path -LiteralPath $PublishDirectory -PathType Container)) {
@@ -32,6 +51,9 @@ if ($PSCmdlet.ParameterSetName -eq 'Directory') {
         [void] $archiveEntries.Add($relative)
         if ($noticeTextByPath.ContainsKey($relative)) {
             $noticeContentByPath[$relative] = Get-Content -LiteralPath $_.FullName -Raw
+        }
+        if ($expectedHashByPath.ContainsKey($relative)) {
+            $actualHashByPath[$relative] = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToUpperInvariant()
         }
     }
 }
@@ -54,6 +76,15 @@ else {
                     }
                     finally {
                         $reader.Dispose()
+                    }
+                }
+                if ($expectedHashByPath.ContainsKey($relative)) {
+                    $stream = $entry.Open()
+                    try {
+                        $actualHashByPath[$relative] = Get-StreamSha256 -Stream $stream
+                    }
+                    finally {
+                        $stream.Dispose()
                     }
                 }
             }
@@ -86,6 +117,28 @@ foreach ($noticePath in $noticeTextByPath.Keys) {
 
 if ($invalidNotices.Count -gt 0) {
     throw "Release package notice content validation failed:`n - $($invalidNotices -join "`n - ")"
+}
+
+$invalidHashes = [System.Collections.Generic.List[string]]::new()
+foreach ($hashPath in $expectedHashByPath.Keys) {
+    if (-not $archiveEntries.Contains($hashPath)) {
+        $invalidHashes.Add("$hashPath is missing from the release package.")
+        continue
+    }
+
+    $actualHash = [string] $actualHashByPath[$hashPath]
+    if ([string]::IsNullOrWhiteSpace($actualHash)) {
+        $invalidHashes.Add("$hashPath could not be hashed.")
+        continue
+    }
+
+    if ($actualHash -ne $expectedHashByPath[$hashPath]) {
+        $invalidHashes.Add("$hashPath has SHA-256 $actualHash; expected $($expectedHashByPath[$hashPath]).")
+    }
+}
+
+if ($invalidHashes.Count -gt 0) {
+    throw "Release package file hash validation failed:`n - $($invalidHashes -join "`n - ")"
 }
 
 if (-not $AllowBlocked) {

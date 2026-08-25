@@ -1,10 +1,9 @@
 <Project>
   <PropertyGroup>
-    <!-- Keep blocked: provenance lead is recorded in
-         docs/history/compatibility-evidence/ci-microsoft-terminal-wpf-1.25.260303002.md,
-         but the Microsoft-generated WPF nupkg and managed-DLL hash comparison
-         were not publicly retrievable. Change only after authorized artifact,
-         notice, and version-specific asset review. -->
-    <ThirdPartyRedistributionState>blocked</ThirdPartyRedistributionState>
+    <!-- Verified source provenance and upstream notice hashes are recorded in
+         docs/history/compatibility-evidence/ci-microsoft-terminal-wpf-1.25.260303002.md.
+         Release ZIP validation requires the full upstream LICENSE and NOTICE.md
+         copies declared in redistribution-manifest.json. -->
+    <ThirdPartyRedistributionState>verified</ThirdPartyRedistributionState>
   </PropertyGroup>
 </Project>
