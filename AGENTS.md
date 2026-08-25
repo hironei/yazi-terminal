@@ -38,6 +38,21 @@ README, user manual, and the `yazi-desktop-host.yazi` directory.
 - Before a release, run a Release `win-x64` publish, verify the output and
   native assets, and document any unverified GUI, IME, Shell, or packaging
   behavior.
+- For `CI.Microsoft.Terminal.Wpf`, keep the provenance record version-pinned:
+  retain the upstream Terminal commit, official WPF pack-pipeline reference,
+  assembly metadata/rebuild findings, native asset hash comparison, and the
+  full upstream `LICENSE` and `NOTICE.md` snapshots. The managed assembly has
+  no package PDB/SourceLink; an independently rebuilt managed DLL need not be
+  byte-identical, so do not claim byte identity from matching metadata alone.
+- A release ZIP must be validated by `eng/Test-ReleasePackage.ps1`, including
+  the manifest's required notice-file SHA-256 values. If an existing release
+  asset is remediated, first preserve the old asset's executable/native entry
+  hashes, then replace the same-named asset and verify the public download URL;
+  update the release evidence JSON and notes to state whether code bytes were
+  preserved. Do not leave both the old and remediated ZIP under different names.
+- Keep the redistribution manifest and `ThirdPartyRedistribution.props` in
+  sync. A `verified` release requires every resolved package to be `verified`,
+  complete notice files to be shipped, and the release ZIP hash check to pass.
 - Do not commit or push unless the user explicitly requests it.
 - Do not discard unrelated user changes, including the local `.codex/`
   directory.

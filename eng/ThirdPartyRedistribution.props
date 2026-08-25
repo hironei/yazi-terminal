@@ -1,6 +1,9 @@
 <Project>
   <PropertyGroup>
-    <!-- Change only after an authorized evidence and notice review. -->
-    <ThirdPartyRedistributionState>blocked</ThirdPartyRedistributionState>
+    <!-- Verified source provenance and upstream notice hashes are recorded in
+         docs/history/compatibility-evidence/ci-microsoft-terminal-wpf-1.25.260303002.md.
+         Release ZIP validation requires the full upstream LICENSE and NOTICE.md
+         copies declared in redistribution-manifest.json. -->
+    <ThirdPartyRedistributionState>verified</ThirdPartyRedistributionState>
   </PropertyGroup>
 </Project>

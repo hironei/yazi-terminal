@@ -23,12 +23,13 @@ the MIT `LICENSE`, this documentation, and the Yazi bridge plugin.
 
 ### Binary release status
 
-New binary archives are blocked while the redistribution terms for the
-`CI.Microsoft.Terminal.Wpf` repackage remain unverified. This is not a legal
-conclusion; see [the third-party notices](THIRD-PARTY-NOTICES.md) for the
-package evidence and the v0.1.8 remediation policy. Do not treat the existing
-v0.1.8 asset as remediated until an authorized maintainer records the missing
-evidence and decides whether to replace or withdraw it.
+The `CI.Microsoft.Terminal.Wpf` repackage has version-specific provenance
+ evidence tied to Microsoft Terminal commit `9ae724aa...`; the full upstream
+ Microsoft Terminal `LICENSE` and `NOTICE.md` are included in the release ZIP
+ and validated by SHA-256. This is not a legal conclusion; see
+ [the third-party notices](THIRD-PARTY-NOTICES.md) for the evidence. The
+ v0.1.8 Release is retained, and its ZIP is replaced by a notice-complete
+ repackaging with no executable-code changes.
 
 ## Developer setup
 

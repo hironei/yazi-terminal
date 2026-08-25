@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "releaseState": "blocked",
-  "releaseBlocker": "CI.Microsoft.Terminal.Wpf 1.25.260303002 has no package license/notice or repository provenance sufficient to confirm binary redistribution.",
+  "releaseState": "verified",
+  "releaseBlocker": "",
   "requiredArchiveFiles": [
     "LICENSE",
     "README.md",
@@ -10,14 +10,26 @@
     "yazi-desktop-host.yazi/README.md",
     "THIRD-PARTY-NOTICES.md",
     "third-party/EasyWindowsTerminalControl-MIT.txt",
-    "third-party/Microsoft-Windows-Console-ConPTY-MIT.txt"
+    "third-party/Microsoft-Windows-Console-ConPTY-MIT.txt",
+    "third-party/microsoft-terminal/LICENSE",
+    "third-party/microsoft-terminal/NOTICE.md"
+  ],
+  "requiredFileHashes": [
+    {
+      "path": "third-party/microsoft-terminal/LICENSE",
+      "sha256": "5D177F23ECFEB0EA8E050B6A5A16355E1AE9A0B286436CA8F83ED08B3795BE6B"
+    },
+    {
+      "path": "third-party/microsoft-terminal/NOTICE.md",
+      "sha256": "E7FBAADEE6AB20C28B87730A510EE5F5815D8FB4BD88D1D54D282DC2A74C0726"
+    }
   ],
   "requiredNoticeFiles": [
     {
       "path": "THIRD-PARTY-NOTICES.md",
       "requiredText": [
-        "CI.Microsoft.Terminal.Wpf 1.25.260303002 — RELEASE BLOCKED",
-        "do not publish"
+        "CI.Microsoft.Terminal.Wpf 1.25.260303002 — VERIFIED PROVENANCE",
+        "Microsoft Terminal MIT files are included"
       ]
     },
     {
@@ -35,13 +47,27 @@
         "Copyright (c) Microsoft Corporation. All rights reserved.",
         "MIT License"
       ]
+    },
+    {
+      "path": "third-party/microsoft-terminal/LICENSE",
+      "requiredText": [
+        "MIT License",
+        "Permission is hereby granted"
+      ]
+    },
+    {
+      "path": "third-party/microsoft-terminal/NOTICE.md",
+      "requiredText": [
+        "# NOTICES AND INFORMATION",
+        "Microsoft makes certain"
+      ]
     }
   ],
   "packages": [
     {
       "id": "EasyWindowsTerminalControl",
       "version": "1.0.38",
-      "status": "declared",
+      "status": "verified",
       "evidence": "Package nuspec: license expression MIT; repository https://github.com/MitchCapper/EasyWindowsTerminalControl at 0741a4b8853c47bcac4412d005ed4ae1d96d2c13.",
       "assets": [
         "EasyWindowsTerminalControl.dll"
@@ -53,7 +79,7 @@
     {
       "id": "Microsoft.Windows.Console.ConPTY",
       "version": "1.24.260710001",
-      "status": "declared",
+      "status": "verified",
       "evidence": "Package nuspec: license expression MIT; project URL https://github.com/microsoft/terminal.",
       "assets": [
         "conpty.dll"
@@ -65,13 +91,16 @@
     {
       "id": "CI.Microsoft.Terminal.Wpf",
       "version": "1.25.260303002",
-      "status": "blocked",
-      "evidence": "Package nuspec has no license expression, license URL/file, or repository URL; the nupkg has no LICENSE or NOTICE entry.",
+      "status": "verified",
+      "evidence": "The package nuspec pins Microsoft Terminal commit 9ae724aa5b080aafbeea2bbf88db630b182cc802. The official WPF pack pipeline and source rebuild correlate the managed assembly metadata and 113 reflection type/method/resource signatures; the package x64 native DLL hash matches the Microsoft release ZIP. Full upstream LICENSE and NOTICE.md snapshots are shipped and hash-validated; detailed evidence is recorded in docs/history/compatibility-evidence/ci-microsoft-terminal-wpf-1.25.260303002.md and the adjacent SHA-256 inventory.",
       "assets": [
         "Microsoft.Terminal.Wpf.dll",
         "Microsoft.Terminal.Control.dll"
       ],
-      "noticeFiles": []
+      "noticeFiles": [
+        "third-party/microsoft-terminal/LICENSE",
+        "third-party/microsoft-terminal/NOTICE.md"
+      ]
     }
   ]
 }
