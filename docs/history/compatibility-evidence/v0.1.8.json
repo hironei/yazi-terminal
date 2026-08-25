@@ -3,8 +3,8 @@
   "Release": {
     "Tag": "v0.1.8",
     "ArchiveFileName": "YaziTerminal-v0.1.8-win-x64.zip",
-    "ArchiveSha256": "0A7B989316A837451A1EF8064BDDB43D96A7798E802D3F7209897917800FB38E",
-    "EntryCount": 16,
+    "ArchiveSha256": "C23A7A9893134CBEC3D00C4308C4A37B869359EE43BD923FF7ABC02E313ED237",
+    "EntryCount": 21,
     "Entries": [
       "conpty.dll",
       "docs/user-manual.md",
@@ -14,6 +14,11 @@
       "Microsoft.Terminal.Control.pdb",
       "Microsoft.Terminal.Wpf.dll",
       "README.md",
+      "THIRD-PARTY-NOTICES.md",
+      "third-party/EasyWindowsTerminalControl-MIT.txt",
+      "third-party/Microsoft-Windows-Console-ConPTY-MIT.txt",
+      "third-party/microsoft-terminal/LICENSE",
+      "third-party/microsoft-terminal/NOTICE.md",
       "yazi-desktop-host.yazi/LICENSE",
       "yazi-desktop-host.yazi/main.lua",
       "yazi-desktop-host.yazi/README.md",
@@ -36,7 +41,7 @@
     "PluginSha256": "D8CEBB2514D07596EE7D58D293BC2C19D85A48BC192E6206E69CBD4416C7C082"
   },
   "Verification": {
-    "ArtifactInspection": "observed",
+    "ArtifactInspection": "replaced-with-notice-complete-repackaging-preserving-code",
     "PluginSourceInspection": "observed",
     "HostProtocolTests": "record separately from this manifest",
     "LiveYaziPluginFixture": "not-run"

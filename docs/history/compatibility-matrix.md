@@ -8,21 +8,21 @@ architecture, or Yazi release is supported.
 
 ## Current release and source observations
 
-The following values were directly observed for the public v0.1.8 archive and
-the matching current source checkout. The exact SHA-256, complete ZIP entry
-list, executable version, source commit, and bridge plugin blob are in
+The following values were directly observed for the notice-complete public
+v0.1.8 archive and its release-tag source. The exact SHA-256, complete ZIP
+entry list, executable version, source commit, and bridge plugin blob are in
 [`compatibility-evidence/v0.1.8.json`](compatibility-evidence/v0.1.8.json).
 
 | Area | Observed value | Status | Boundary |
 | --- | --- | --- | --- |
-| Release artifact | `YaziTerminal-v0.1.8-win-x64.zip`, SHA-256 `0A7B989316A837451A1EF8064BDDB43D96A7798E802D3F7209897917800FB38E`, 16 entries | OBSERVED | This is inspection of the published asset, not a new publish run. |
+| Release artifact | `YaziTerminal-v0.1.8-win-x64.zip`, SHA-256 `C23A7A9893134CBEC3D00C4308C4A37B869359EE43BD923FF7ABC02E313ED237`, 21 entries | REPACKAGED | Existing executable/native files are byte-identical; the ZIP adds the full third-party notices. |
 | Executable | `YaziTerminal.exe`, file version `0.1.8`, product version `0.1.8+c65ff9eef68ef1af3a338587ca3a1ceb67836de5` | OBSERVED | The archive uses the current assembly name, unlike the older historical publish record. |
-| Current source | commit `c65ff9eef68ef1af3a338587ca3a1ceb67836de5` | OBSERVED | Evidence must be regenerated when source changes. |
-| Bridge plugin | `main.lua` Git blob `d7db80883342fd04296d090c136980cdf044e7dc`; SHA-256 `D8CEBB2514D07596EE7D58D293BC2C19D85A48BC192E6206E69CBD4416C7C082` | OBSERVED | The v0.1.8 archive plugin bytes match this source revision. |
+| Release source | tag commit `c65ff9eef68ef1af3a338587ca3a1ceb67836de5` | OBSERVED | The notice-only replacement intentionally preserves the v0.1.8 executable source; current main has later changes. |
+| Bridge plugin | `main.lua` Git blob `d7db80883342fd04296d090c136980cdf044e7dc`; SHA-256 `D8CEBB2514D07596EE7D58D293BC2C19D85A48BC192E6206E69CBD4416C7C082` | OBSERVED | The v0.1.8 archive plugin bytes match the release tag, not the later current main. |
 | Plugin command catalog/reconnect source | `hello` sends `json_commands(get_all_commands())`; reconnect loop resets sequence and retries | STATIC PASS | Lua syntax/source inspection only; not a live Yazi fixture. |
 | Host bridge protocol | parser, command catalog, and reconnect executable tests | AUTOMATED PASS | Named-pipe host tests do not execute Yazi/Lua. |
 | Live Yazi bridge/catalog/reconnect | Current plugin with real Yazi | NOT RUN | Local Yazi/`ya` is 26.8.15; the historical live fixture used 26.5.6. |
-| Release `win-x64` publish | New current publish artifact | NOT RUN | Do not bypass the Issue #21 fail-closed redistribution gate to manufacture an artifact. |
+| Release `win-x64` package validation | Notice-only v0.1.8 repackaging | AUTOMATED PASS | `Test-ReleasePackage.ps1` validates all required files and upstream notice hashes. |
 
 ## Historical validated fixture
 
