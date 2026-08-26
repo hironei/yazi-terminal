@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Windows.Media;
 
 namespace YaziDesktopHost;
 
@@ -22,25 +23,28 @@ internal static class HostSettingsCatalog
     public const string DefaultFontFamily = "MS Gothic";
     public const int DefaultFontSize = 14;
 
-    public static IReadOnlyList<string> FontFamilies { get; } =
-    [
-        "MS Gothic",
-        "Consolas",
-        "Cascadia Mono",
-        "Cascadia Code",
-    ];
-
-    public static IReadOnlyList<int> FontSizes { get; } = [12, 14, 16, 18, 20];
-
-    public static bool IsSupportedFontFamily(string? value)
+    public static bool TryNormalizeFontFamily(string? value, out string fontFamily)
     {
-        return value is not null
-            && FontFamilies.Contains(value, StringComparer.OrdinalIgnoreCase);
+        fontFamily = DefaultFontFamily;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        try
+        {
+            fontFamily = new FontFamily(value.Trim()).Source;
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
-    public static bool IsSupportedFontSize(int value)
+    public static bool IsValidFontSize(int value)
     {
-        return FontSizes.Contains(value);
+        return value is > 0 and <= short.MaxValue;
     }
 }
 
@@ -88,23 +92,21 @@ internal static class HostSettingsStore
             var themeMode = string.Equals(persisted.Theme, "Light", StringComparison.OrdinalIgnoreCase)
                 ? AppThemeMode.Light
                 : AppThemeMode.Dark;
-            var hasSupportedFontFamily = HostSettingsCatalog.IsSupportedFontFamily(persisted.FontFamily);
-            var fontFamily = hasSupportedFontFamily
-                ? HostSettingsCatalog.FontFamilies.First(
-                    candidate => string.Equals(candidate, persisted.FontFamily, StringComparison.OrdinalIgnoreCase))
-                : HostSettingsCatalog.DefaultFontFamily;
-            if (persisted.FontFamily is not null && !hasSupportedFontFamily)
+            var hasValidFontFamily = HostSettingsCatalog.TryNormalizeFontFamily(
+                persisted.FontFamily,
+                out var fontFamily);
+            if (persisted.FontFamily is not null && !hasValidFontFamily)
             {
                 AppLogger.Log("settings_font_family_fallback");
             }
 
             var requestedFontSize = persisted.FontSize;
-            var hasSupportedFontSize = requestedFontSize is { } size
-                && HostSettingsCatalog.IsSupportedFontSize(size);
-            var fontSize = hasSupportedFontSize
+            var hasValidFontSize = requestedFontSize is { } size
+                && HostSettingsCatalog.IsValidFontSize(size);
+            var fontSize = hasValidFontSize
                 ? requestedFontSize!.Value
                 : HostSettingsCatalog.DefaultFontSize;
-            if (requestedFontSize is not null && !hasSupportedFontSize)
+            if (requestedFontSize is not null && !hasValidFontSize)
             {
                 AppLogger.Log("settings_font_size_fallback");
             }

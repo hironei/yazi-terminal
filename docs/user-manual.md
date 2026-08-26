@@ -185,19 +185,20 @@ To edit the terminal font family or font size, select
 `%LOCALAPPDATA%\YaziTerminal\settings.json`, then asks Yazi to reveal and open
 that file using Yazi's configured opener/editor. Edit the JSON values and
 save the file. The file contains `Theme`, `FontFamily`,
-and `FontSize`. The supported font settings are:
+and `FontSize`. `FontFamily` accepts any installed font family name, such as
+`HackGen Console`. The font settings are:
 
 | Setting | Allowed values | Default |
 | --- | --- | --- |
-| `FontFamily` | `MS Gothic`, `Consolas`, `Cascadia Mono`, `Cascadia Code` | `MS Gothic` |
-| `FontSize` | `12`, `14`, `16`, `18`, `20` | `14` |
+| `FontFamily` | Any installed font family name | `MS Gothic` |
+| `FontSize` | Any positive integer from `1` to `32767` | `14` |
 
-Unsupported values fall back independently to those defaults. To confirm a
-fallback after saving or restarting, check
+Missing, blank, or invalid values fall back independently to those defaults.
+To confirm a fallback after saving or restarting, check
 `%LOCALAPPDATA%\YaziTerminal\app.log` for
 `settings_font_family_fallback` and/or `settings_font_size_fallback`, then
-replace the value with one from the table. Add a
-`ThemeColors` object to customize Light and Dark independently. Color values
+replace it with an installed font family name or a font size in the documented range. Add
+a `ThemeColors` object to customize Light and Dark independently. Color values
 must be six-digit RGB strings in `#RRGGBB` format. The named fields are
 `HostBackground`, `HostForeground`, `PaletteBackground`, `PaletteForeground`,
 `PaletteBorder`, `PaletteInputBackground`, `PaletteSelectionBackground`,

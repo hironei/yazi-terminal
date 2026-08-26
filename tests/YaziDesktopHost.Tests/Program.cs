@@ -58,8 +58,8 @@ var tests = new (string Name, Action Test)[]
     ("Yazi action tokenizer handles quoted arguments", YaziActionTokenizerHandlesQuotedArguments),
     ("Yazi action tokenizer rejects unterminated quotes", YaziActionTokenizerRejectsUnterminatedQuotes),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
-    ("host settings catalog matches the documented font options", HostSettingsCatalogMatchesDocumentedFontOptions),
-    ("host settings round trip and reject unsupported values", HostSettingsRoundTripAndRejectsUnsupportedValues),
+    ("host settings accept custom font families and sizes", HostSettingsAcceptCustomFontFamiliesAndSizes),
+    ("host settings round trip and reject blank or invalid values", HostSettingsRoundTripAndRejectsBlankOrInvalidValues),
     ("Yazi exit policy distinguishes known normal and abnormal exits", YaziExitPolicyDistinguishesKnownNormalAndAbnormalExits),
     ("Yazi exit policy preserves unknown process-monitor exits", YaziExitPolicyPreservesUnknownProcessMonitorExit),
     ("Yazi exit policy preserves unknown terminal-marker exits", YaziExitPolicyPreservesUnknownTerminalMarkerExit),
@@ -1712,7 +1712,7 @@ static void TerminalPasteIgnoresEmptyText()
     Assert(TerminalClipboardPaste.HasText("text"));
 }
 
-static void HostSettingsRoundTripAndRejectsUnsupportedValues()
+static void HostSettingsRoundTripAndRejectsBlankOrInvalidValues()
 {
     var path = Path.Combine(Path.GetTempPath(), $"yazi-settings-test-{Guid.NewGuid():N}.json");
     try
@@ -1722,7 +1722,7 @@ static void HostSettingsRoundTripAndRejectsUnsupportedValues()
             .ToArray();
         var expected = new HostSettings(
             AppThemeMode.Light,
-            "Consolas",
+            "HackGen Console",
             18,
             new ThemeColorOverrides(
                 HostBackground: new RgbColor(1, 2, 3),
@@ -1744,8 +1744,8 @@ static void HostSettingsRoundTripAndRejectsUnsupportedValues()
             """
             {
               "Theme": "Light",
-              "FontFamily": "Not Installed",
-              "FontSize": 99,
+              "FontFamily": "   ",
+              "FontSize": 0,
               "ThemeColors": {
                 "Dark": {
                   "HostBackground": "#010203",
@@ -1776,14 +1776,15 @@ static void HostSettingsRoundTripAndRejectsUnsupportedValues()
     }
 }
 
-static void HostSettingsCatalogMatchesDocumentedFontOptions()
+static void HostSettingsAcceptCustomFontFamiliesAndSizes()
 {
-    Assert(HostSettingsCatalog.FontFamilies.SequenceEqual([
-        "MS Gothic",
-        "Consolas",
-        "Cascadia Mono",
-        "Cascadia Code"]));
-    Assert(HostSettingsCatalog.FontSizes.SequenceEqual([12, 14, 16, 18, 20]));
+    Assert(HostSettingsCatalog.TryNormalizeFontFamily("HackGen Console", out var customFontFamily));
+    Assert(customFontFamily == "HackGen Console");
+    Assert(!HostSettingsCatalog.TryNormalizeFontFamily("   ", out _));
+    Assert(HostSettingsCatalog.IsValidFontSize(13));
+    Assert(HostSettingsCatalog.IsValidFontSize(short.MaxValue));
+    Assert(!HostSettingsCatalog.IsValidFontSize(0));
+    Assert(!HostSettingsCatalog.IsValidFontSize(short.MaxValue + 1));
     Assert(HostSettingsCatalog.DefaultFontFamily == "MS Gothic");
     Assert(HostSettingsCatalog.DefaultFontSize == 14);
 }
