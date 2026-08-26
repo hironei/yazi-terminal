@@ -2,6 +2,8 @@
 
 Windows WPF host for the ordinary Yazi terminal file manager. The project is
 published as **Yazi Terminal** under the `yazi-terminal` repository name.
+YaziTerminal's purpose is to integrate Yazi with Windows Explorer, including
+DragAndDrop workflows and context menus for Yazi targets.
 `EasyWindowsTerminalControl` 1.0.38 is the selected backend for the current
 implementation. It hosts the Windows Terminal renderer and ConPTY through a
 native terminal control; production packaging gates remain open.
