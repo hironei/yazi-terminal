@@ -23,8 +23,6 @@ internal static class HostSettingsCatalog
     public const string DefaultFontFamily = "MS Gothic";
     public const int DefaultFontSize = 14;
 
-    public static IReadOnlyList<int> FontSizes { get; } = [12, 14, 16, 18, 20];
-
     public static bool TryNormalizeFontFamily(string? value, out string fontFamily)
     {
         fontFamily = DefaultFontFamily;
@@ -44,9 +42,9 @@ internal static class HostSettingsCatalog
         }
     }
 
-    public static bool IsSupportedFontSize(int value)
+    public static bool IsValidFontSize(int value)
     {
-        return FontSizes.Contains(value);
+        return value is > 0 and <= short.MaxValue;
     }
 }
 
@@ -103,12 +101,12 @@ internal static class HostSettingsStore
             }
 
             var requestedFontSize = persisted.FontSize;
-            var hasSupportedFontSize = requestedFontSize is { } size
-                && HostSettingsCatalog.IsSupportedFontSize(size);
-            var fontSize = hasSupportedFontSize
+            var hasValidFontSize = requestedFontSize is { } size
+                && HostSettingsCatalog.IsValidFontSize(size);
+            var fontSize = hasValidFontSize
                 ? requestedFontSize!.Value
                 : HostSettingsCatalog.DefaultFontSize;
-            if (requestedFontSize is not null && !hasSupportedFontSize)
+            if (requestedFontSize is not null && !hasValidFontSize)
             {
                 AppLogger.Log("settings_font_size_fallback");
             }

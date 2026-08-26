@@ -191,13 +191,13 @@ and `FontSize`. `FontFamily` accepts any installed font family name, such as
 | Setting | Allowed values | Default |
 | --- | --- | --- |
 | `FontFamily` | Any installed font family name | `MS Gothic` |
-| `FontSize` | `12`, `14`, `16`, `18`, `20` | `14` |
+| `FontSize` | Any positive integer from `1` to `32767` | `14` |
 
 Missing, blank, or invalid values fall back independently to those defaults.
 To confirm a fallback after saving or restarting, check
 `%LOCALAPPDATA%\YaziTerminal\app.log` for
 `settings_font_family_fallback` and/or `settings_font_size_fallback`, then
-replace it with an installed font family name or a font size from the table. Add
+replace it with an installed font family name or a font size in the documented range. Add
 a `ThemeColors` object to customize Light and Dark independently. Color values
 must be six-digit RGB strings in `#RRGGBB` format. The named fields are
 `HostBackground`, `HostForeground`, `PaletteBackground`, `PaletteForeground`,
