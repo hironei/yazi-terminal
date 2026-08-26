@@ -33,6 +33,8 @@ README, user manual, and the `yazi-desktop-host.yazi` directory.
 ## Documentation and release
 
 - Keep README and the user manual concise and user-facing.
+- Keep release artifacts, `README.md`, and `docs/user-manual.md` in English.
+  Japanese is allowed in development records and Issue discussions.
 - Record compatibility evidence and implementation history under
   `docs/history/`.
 - Before a release, run a Release `win-x64` publish, verify the output and
