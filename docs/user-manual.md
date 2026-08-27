@@ -207,6 +207,16 @@ and `TerminalSelectionBackground`. `TerminalColorTable` accepts exactly 16
 colors in ANSI order (black, red, green, yellow, blue, magenta, cyan, white,
 then their bright variants).
 
+The host also saves the window's display, position, size, and normal/maximized
+state in the same settings file when the window closes. The next launch restores
+the last-used display when it is connected. Positions observed on other
+displays are retained independently, so moving the window between displays
+preserves each display's last placement. If a display is disconnected or its
+resolution changed, the host selects a connected display and clamps the window
+to that display's work area so it remains visible. A minimized window is
+restored visibly. Existing settings files without placement data continue to
+use the default startup size.
+
 The named color settings affect these parts of the host:
 
 | Setting | Affected area |

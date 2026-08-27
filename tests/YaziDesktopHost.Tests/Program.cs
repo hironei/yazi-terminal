@@ -61,6 +61,9 @@ var tests = new (string Name, Action Test)[]
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
     ("host settings accept custom font families and sizes", HostSettingsAcceptCustomFontFamiliesAndSizes),
     ("host settings round trip and reject blank or invalid values", HostSettingsRoundTripAndRejectsBlankOrInvalidValues),
+    ("window placement settings round trip and ignore malformed placement", WindowPlacementSettingsRoundTripAndIgnoreMalformedPlacement),
+    ("window placement catalog keeps per-monitor placements", WindowPlacementCatalogKeepsPerMonitorPlacements),
+    ("window placement catalog selects connected fallback and clamps bounds", WindowPlacementCatalogSelectsConnectedFallbackAndClampsBounds),
     ("Yazi exit policy distinguishes known normal and abnormal exits", YaziExitPolicyDistinguishesKnownNormalAndAbnormalExits),
     ("Yazi exit policy treats completed process monitors as normal", YaziExitPolicyTreatsCompletedProcessMonitorAsNormal),
     ("Yazi exit policy preserves unknown process-monitor exits", YaziExitPolicyPreservesUnknownProcessMonitorExit),
@@ -1815,6 +1818,108 @@ static void HostSettingsAcceptCustomFontFamiliesAndSizes()
     Assert(!HostSettingsCatalog.IsValidFontSize(short.MaxValue + 1));
     Assert(HostSettingsCatalog.DefaultFontFamily == "MS Gothic");
     Assert(HostSettingsCatalog.DefaultFontSize == 14);
+}
+
+static void WindowPlacementSettingsRoundTripAndIgnoreMalformedPlacement()
+{
+    var path = Path.Combine(Path.GetTempPath(), $"yazi-placement-test-{Guid.NewGuid():N}.json");
+    try
+    {
+        var expectedPlacement = new WindowPlacementSettings(
+            @"\\.\DISPLAY2",
+            [
+                new MonitorWindowPlacement(
+                    @"\\.\DISPLAY1",
+                    new WindowBounds(-120, 80, 1080, 880),
+                    WindowPlacementShowState.Normal),
+                new MonitorWindowPlacement(
+                    @"\\.\DISPLAY2",
+                    new WindowBounds(1920, 120, 3200, 920),
+                    WindowPlacementShowState.Maximized),
+            ]);
+        HostSettingsStore.Save(
+            new HostSettings(AppThemeMode.Light, "HackGen Console", 18, WindowPlacement: expectedPlacement),
+            path);
+
+        var actual = HostSettingsStore.Load(path);
+        Assert(actual.ThemeMode == AppThemeMode.Light);
+        Assert(actual.WindowPlacement?.LastMonitorId == expectedPlacement.LastMonitorId);
+        Assert(actual.WindowPlacement?.Monitors.Count == 2);
+        Assert(actual.WindowPlacement?.Monitors.Single(item => item.MonitorId.EndsWith("DISPLAY2"))
+            .ShowState == WindowPlacementShowState.Maximized);
+
+        File.WriteAllText(
+            path,
+            "{\"Theme\":\"Light\",\"FontFamily\":\"HackGen Console\",\"FontSize\":18,\"WindowPlacement\":\"invalid\"}");
+        var malformed = HostSettingsStore.Load(path);
+        Assert(malformed.ThemeMode == AppThemeMode.Light);
+        Assert(malformed.FontFamily == "HackGen Console");
+        Assert(malformed.FontSize == 18);
+        Assert(malformed.WindowPlacement is null);
+    }
+    finally
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+}
+
+static void WindowPlacementCatalogKeepsPerMonitorPlacements()
+{
+    var first = new MonitorWindowPlacement(
+        @"\\.\DISPLAY1",
+        new WindowBounds(10, 20, 1010, 720),
+        WindowPlacementShowState.Normal);
+    var second = new MonitorWindowPlacement(
+        @"\\.\DISPLAY2",
+        new WindowBounds(1920, 40, 3120, 840),
+        WindowPlacementShowState.Maximized);
+    var updatedFirst = first with
+    {
+        NormalBounds = new WindowBounds(50, 60, 1250, 860),
+    };
+
+    var settings = WindowPlacementCatalog.Upsert(null, first);
+    settings = WindowPlacementCatalog.Upsert(settings, second);
+    settings = WindowPlacementCatalog.Upsert(settings, updatedFirst);
+
+    Assert(settings.LastMonitorId == first.MonitorId);
+    Assert(settings.Monitors.Count == 2);
+    Assert(settings.Monitors.Single(item => item.MonitorId == first.MonitorId).NormalBounds == updatedFirst.NormalBounds);
+    Assert(settings.Monitors.Single(item => item.MonitorId == second.MonitorId).ShowState == second.ShowState);
+}
+
+static void WindowPlacementCatalogSelectsConnectedFallbackAndClampsBounds()
+{
+    var settings = new WindowPlacementSettings(
+        @"\\.\DISPLAY3",
+        [
+            new MonitorWindowPlacement(
+                @"\\.\DISPLAY1",
+                new WindowBounds(-500, -400, 1500, 1200),
+                WindowPlacementShowState.Normal),
+            new MonitorWindowPlacement(
+                @"\\.\DISPLAY2",
+                new WindowBounds(2000, 200, 2800, 800),
+                WindowPlacementShowState.Maximized),
+        ]);
+    var connected = new[]
+    {
+        new ConnectedMonitor(@"\\.\DISPLAY1", new WindowBounds(0, 0, 1920, 1040)),
+        new ConnectedMonitor(@"\\.\DISPLAY2", new WindowBounds(1920, 0, 3840, 2160)),
+    };
+
+    var selected = WindowPlacementCatalog.Select(settings, connected);
+    Assert(selected?.MonitorId == @"\\.\DISPLAY1");
+    var clamped = WindowPlacementCatalog.Clamp(
+        selected!.NormalBounds,
+        connected[0].WorkArea);
+    Assert(clamped == new WindowBounds(0, 0, 1920, 1040));
+
+    var lastMonitorAvailable = settings with { LastMonitorId = @"\\.\DISPLAY2" };
+    Assert(WindowPlacementCatalog.Select(lastMonitorAvailable, connected)?.MonitorId == @"\\.\DISPLAY2");
 }
 
 static void YaziThemeLoaderReadsSelectedFlavor()

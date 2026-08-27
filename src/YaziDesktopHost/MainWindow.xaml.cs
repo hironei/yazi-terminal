@@ -35,7 +35,10 @@ public partial class MainWindow : Window
     private int _fontSize = HostSettingsCatalog.DefaultFontSize;
     private ThemeColorOverrides? _darkThemeColors;
     private ThemeColorOverrides? _lightThemeColors;
+    private WindowPlacementSettings? _windowPlacementSettings;
     private bool _isCommandPaletteOpen;
+    private bool _isRestoringWindowPlacement;
+    private bool _isWindowPlacementReady;
     private string? _yaziClientId;
     private string? _yaExecutable;
     private bool _yaziReady;
@@ -75,6 +78,7 @@ public partial class MainWindow : Window
         _fontSize = settings.FontSize;
         _darkThemeColors = settings.DarkColors;
         _lightThemeColors = settings.LightColors;
+        _windowPlacementSettings = settings.WindowPlacement;
         InitializeComponent();
         if (!_lastInstanceServer.Start())
         {
@@ -96,6 +100,30 @@ public partial class MainWindow : Window
     private void Window_Activated(object? sender, EventArgs e)
     {
         QueueTerminalFocus();
+    }
+
+    private void Window_LocationChanged(object? sender, EventArgs e)
+    {
+        if (_isWindowPlacementReady)
+        {
+            CaptureWindowPlacement();
+        }
+    }
+
+    private void Window_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (_isWindowPlacementReady)
+        {
+            CaptureWindowPlacement();
+        }
+    }
+
+    private void Window_StateChanged(object? sender, EventArgs e)
+    {
+        if (_isWindowPlacementReady)
+        {
+            CaptureWindowPlacement();
+        }
     }
 
     private void ApplyTheme(AppThemeMode mode)
@@ -272,6 +300,18 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Window_ContentRendered(object? sender, EventArgs e)
+    {
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.ApplicationIdle,
+            new Action(() =>
+            {
+                RestoreWindowPlacement();
+                _isWindowPlacementReady = true;
+                CaptureWindowPlacement();
+            }));
+    }
+
     private void QueueTerminalFocus()
     {
         if (_isClosing || _isCommandPaletteOpen || _terminal is null)
@@ -299,7 +339,51 @@ public partial class MainWindow : Window
 
         _isClosing = true;
         StopSettingsWatcher();
+        SaveWindowPlacement();
         DisposeSession();
+    }
+
+    private void SaveWindowPlacement()
+    {
+        CaptureWindowPlacement();
+        SaveSettings();
+    }
+
+    private void RestoreWindowPlacement()
+    {
+        var windowHandle = new WindowInteropHelper(this).Handle;
+        if (windowHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        _isRestoringWindowPlacement = true;
+        try
+        {
+            WindowPlacementNative.TryRestore(windowHandle, _windowPlacementSettings);
+        }
+        finally
+        {
+            _isRestoringWindowPlacement = false;
+        }
+    }
+
+    private void CaptureWindowPlacement()
+    {
+        var windowHandle = new WindowInteropHelper(this).Handle;
+        if (_isRestoringWindowPlacement || windowHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        if (WindowPlacementNative.TryCapture(
+                windowHandle,
+                out var placement))
+        {
+            _windowPlacementSettings = WindowPlacementCatalog.Upsert(
+                _windowPlacementSettings,
+                placement);
+        }
     }
 
     private void StartSettingsWatcher()
@@ -371,6 +455,7 @@ public partial class MainWindow : Window
         _fontSize = settings.FontSize;
         _darkThemeColors = settings.DarkColors;
         _lightThemeColors = settings.LightColors;
+        _windowPlacementSettings = settings.WindowPlacement;
         ApplyTheme(_themeMode);
         AppLogger.Log("settings_reloaded");
     }
@@ -1034,6 +1119,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        SaveWindowPlacement();
         _isClosing = true;
         AppLogger.Log("yazi_normal_exit");
         DisposeSession(processAlreadyExited: true);
@@ -1134,6 +1220,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        SaveWindowPlacement();
         _isClosing = true;
         AppLogger.Log("yazi_unexpected_exit");
         MessageBox.Show(
@@ -1224,7 +1311,8 @@ public partial class MainWindow : Window
             _fontFamily,
             _fontSize,
             _darkThemeColors,
-            _lightThemeColors));
+            _lightThemeColors,
+            _windowPlacementSettings));
     }
 
     private ThemeColors GetThemeColors(AppThemeMode mode)
