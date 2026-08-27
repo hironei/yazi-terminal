@@ -10,7 +10,8 @@ internal sealed record HostSettings(
     string FontFamily,
     int FontSize,
     ThemeColorOverrides? DarkColors = null,
-    ThemeColorOverrides? LightColors = null)
+    ThemeColorOverrides? LightColors = null,
+    WindowPlacementSettings? WindowPlacement = null)
 {
     public static HostSettings Defaults => new(
         AppThemeMode.Dark,
@@ -116,7 +117,8 @@ internal static class HostSettingsStore
                 fontFamily,
                 fontSize,
                 ParseOverrides(persisted.ThemeColors?.Dark),
-                ParseOverrides(persisted.ThemeColors?.Light));
+                ParseOverrides(persisted.ThemeColors?.Light),
+                ParseWindowPlacement(persisted.WindowPlacement));
             return true;
         }
         catch (Exception exception) when (exception is IOException
@@ -152,7 +154,8 @@ internal static class HostSettingsStore
                 settings.ThemeMode == AppThemeMode.Light ? "Light" : "Dark",
                 settings.FontFamily,
                 settings.FontSize,
-                SerializeThemeColors(settings.DarkColors, settings.LightColors));
+                SerializeThemeColors(settings.DarkColors, settings.LightColors),
+                SerializeWindowPlacement(settings.WindowPlacement));
             File.WriteAllText(path, JsonSerializer.Serialize(persisted, SerializerOptions));
         }
         catch (Exception exception) when (exception is IOException
@@ -176,7 +179,20 @@ internal static class HostSettingsStore
         string? Theme,
         string? FontFamily,
         int? FontSize,
-        PersistedThemeColors? ThemeColors = null);
+        PersistedThemeColors? ThemeColors = null,
+        JsonElement? WindowPlacement = null);
+
+    private sealed record PersistedWindowPlacement(
+        string? LastMonitorId,
+        PersistedMonitorWindowPlacement[]? Monitors);
+
+    private sealed record PersistedMonitorWindowPlacement(
+        string? MonitorId,
+        int? Left,
+        int? Top,
+        int? Right,
+        int? Bottom,
+        string? State);
 
     private sealed record PersistedThemeColors(
         PersistedThemeColorOverrides? Dark,
@@ -216,6 +232,47 @@ internal static class HostSettingsStore
             ParseColor(persisted.TerminalForeground),
             ParseColor(persisted.TerminalSelectionBackground),
             ParseColorTable(persisted.TerminalColorTable));
+    }
+
+    private static WindowPlacementSettings? ParseWindowPlacement(JsonElement? value)
+    {
+        if (value is not JsonElement element || element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        try
+        {
+            var persisted = element.Deserialize<PersistedWindowPlacement>(SerializerOptions);
+            if (persisted?.Monitors is null)
+            {
+                return null;
+            }
+
+            var placements = persisted.Monitors
+                .Where(item => item.MonitorId is not null
+                    && item.Left is not null
+                    && item.Top is not null
+                    && item.Right is not null
+                    && item.Bottom is not null
+                    && (string.Equals(item.State, "Normal", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(item.State, "Maximized", StringComparison.OrdinalIgnoreCase)))
+                .Select(item => new MonitorWindowPlacement(
+                    item.MonitorId!,
+                    new WindowBounds(
+                        item.Left!.Value,
+                        item.Top!.Value,
+                        item.Right!.Value,
+                        item.Bottom!.Value),
+                    string.Equals(item.State, "Maximized", StringComparison.OrdinalIgnoreCase)
+                        ? WindowPlacementShowState.Maximized
+                        : WindowPlacementShowState.Normal));
+            return WindowPlacementCatalog.Create(persisted.LastMonitorId, placements);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static RgbColor? ParseColor(JsonElement? value)
@@ -262,6 +319,29 @@ internal static class HostSettingsStore
         return new PersistedThemeColors(
             SerializeOverrides(dark),
             SerializeOverrides(light));
+    }
+
+    private static JsonElement? SerializeWindowPlacement(WindowPlacementSettings? settings)
+    {
+        if (settings is null)
+        {
+            return null;
+        }
+
+        var persisted = new PersistedWindowPlacement(
+            settings.LastMonitorId,
+            settings.Monitors
+                .Select(placement => new PersistedMonitorWindowPlacement(
+                    placement.MonitorId,
+                    placement.NormalBounds.Left,
+                    placement.NormalBounds.Top,
+                    placement.NormalBounds.Right,
+                    placement.NormalBounds.Bottom,
+                    placement.ShowState == WindowPlacementShowState.Maximized
+                        ? "Maximized"
+                        : "Normal"))
+                .ToArray());
+        return JsonSerializer.SerializeToElement(persisted, SerializerOptions);
     }
 
     private static PersistedThemeColorOverrides? SerializeOverrides(ThemeColorOverrides? overrides)

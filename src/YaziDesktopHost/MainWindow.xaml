@@ -9,7 +9,11 @@
         Width="1280"
         Height="800"
         Loaded="Window_Loaded"
+        ContentRendered="Window_ContentRendered"
         Activated="Window_Activated"
+        LocationChanged="Window_LocationChanged"
+        SizeChanged="Window_SizeChanged"
+        StateChanged="Window_StateChanged"
         PreviewKeyDown="Window_PreviewKeyDown"
         Closing="Window_Closing">
     <Grid Background="{DynamicResource HostBackgroundBrush}">
