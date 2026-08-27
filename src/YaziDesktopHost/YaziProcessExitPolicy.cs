@@ -8,6 +8,8 @@ public abstract record YaziProcessExit
 
     public sealed record Known(int Code) : YaziProcessExit;
 
+    public sealed record ProcessMonitorCompleted : YaziProcessExit;
+
     public sealed record Unknown : YaziProcessExit;
 }
 
@@ -22,12 +24,16 @@ public static class YaziProcessExitPolicy
 {
     public static YaziProcessExit FromProcessMonitor(int? exitCode) => FromExitCode(exitCode);
 
+    public static YaziProcessExit FromProcessMonitorCompleted() =>
+        new YaziProcessExit.ProcessMonitorCompleted();
+
     public static YaziProcessExit FromTerminalMarker(int? exitCode) => FromExitCode(exitCode);
 
     public static YaziProcessExitClassification Classify(YaziProcessExit exit) => exit switch
     {
         YaziProcessExit.Known { Code: 0 } => YaziProcessExitClassification.Normal,
         YaziProcessExit.Known => YaziProcessExitClassification.Abnormal,
+        YaziProcessExit.ProcessMonitorCompleted => YaziProcessExitClassification.Normal,
         YaziProcessExit.Unknown => YaziProcessExitClassification.Unknown,
         _ => throw new ArgumentOutOfRangeException(nameof(exit)),
     };

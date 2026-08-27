@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Reflection;
 using System.Text;
@@ -61,8 +62,10 @@ var tests = new (string Name, Action Test)[]
     ("host settings accept custom font families and sizes", HostSettingsAcceptCustomFontFamiliesAndSizes),
     ("host settings round trip and reject blank or invalid values", HostSettingsRoundTripAndRejectsBlankOrInvalidValues),
     ("Yazi exit policy distinguishes known normal and abnormal exits", YaziExitPolicyDistinguishesKnownNormalAndAbnormalExits),
+    ("Yazi exit policy treats completed process monitors as normal", YaziExitPolicyTreatsCompletedProcessMonitorAsNormal),
     ("Yazi exit policy preserves unknown process-monitor exits", YaziExitPolicyPreservesUnknownProcessMonitorExit),
     ("Yazi exit policy preserves unknown terminal-marker exits", YaziExitPolicyPreservesUnknownTerminalMarkerExit),
+    ("Yazi exit code reader waits for the OS process", YaziExitCodeReaderWaitsForTheOsProcess),
     ("shell target prefers selected paths", ShellTargetPrefersSelectedPaths),
     ("shell target preserves multiple selection", ShellTargetPreservesMultipleSelection),
     ("shell target falls back to hovered path", ShellTargetFallsBackToHoveredPath),
@@ -1407,6 +1410,15 @@ static void YaziExitPolicyPreservesUnknownProcessMonitorExit()
     Assert(!YaziProcessExitPolicy.IsNormalExit(exit));
 }
 
+static void YaziExitPolicyTreatsCompletedProcessMonitorAsNormal()
+{
+    var exit = YaziProcessExitPolicy.FromProcessMonitorCompleted();
+
+    Assert(exit is YaziProcessExit.ProcessMonitorCompleted);
+    Assert(YaziProcessExitPolicy.Classify(exit) == YaziProcessExitClassification.Normal);
+    Assert(YaziProcessExitPolicy.IsNormalExit(exit));
+}
+
 static void YaziExitPolicyPreservesUnknownTerminalMarkerExit()
 {
     var exit = YaziProcessExitPolicy.FromTerminalMarker(null);
@@ -1414,6 +1426,22 @@ static void YaziExitPolicyPreservesUnknownTerminalMarkerExit()
     Assert(exit is YaziProcessExit.Unknown);
     Assert(YaziProcessExitPolicy.Classify(exit) == YaziProcessExitClassification.Unknown);
     Assert(!YaziProcessExitPolicy.IsNormalExit(exit));
+}
+
+static void YaziExitCodeReaderWaitsForTheOsProcess()
+{
+    using var process = Process.Start(new ProcessStartInfo
+    {
+        FileName = "cmd.exe",
+        UseShellExecute = false,
+        CreateNoWindow = true,
+        ArgumentList = { "/c", "ping 127.0.0.1 -n 2 >nul" },
+    }) ?? throw new InvalidOperationException("Could not start the exit-code test process.");
+
+    var exitCode = MainWindow.ReadExitCode(new object(), process);
+
+    Assert(exitCode == 0);
+    Assert(process.HasExited);
 }
 
 static void ShellTargetPrefersSelectedPaths()

@@ -970,7 +970,7 @@ public partial class MainWindow : Window
                     catch (Exception exception)
                     {
                         AppLogger.Log("yazi_exit_code_unavailable", exception);
-                        exit = YaziProcessExitPolicy.FromProcessMonitor(null);
+                        exit = YaziProcessExitPolicy.FromProcessMonitorCompleted();
                     }
 
                     Dispatcher.Invoke(() => HandleProcessExit(term, exit));
@@ -1071,7 +1071,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private static int ReadExitCode(
+    internal static int ReadExitCode(
         object process,
         System.Diagnostics.Process? systemProcess = null)
     {
@@ -1079,7 +1079,7 @@ public partial class MainWindow : Window
         {
             if (systemProcess is not null)
             {
-                return systemProcess.ExitCode;
+                return ReadSystemProcessExitCode(systemProcess);
             }
         }
         catch (InvalidOperationException)
@@ -1096,7 +1096,7 @@ public partial class MainWindow : Window
         {
             if (processProperty?.GetValue(process) is System.Diagnostics.Process currentProcess)
             {
-                return currentProcess.ExitCode;
+                return ReadSystemProcessExitCode(currentProcess);
             }
         }
         catch (InvalidOperationException)
@@ -1110,7 +1110,7 @@ public partial class MainWindow : Window
             try
             {
                 using var currentProcess = System.Diagnostics.Process.GetProcessById(processId);
-                return currentProcess.ExitCode;
+                return ReadSystemProcessExitCode(currentProcess);
             }
             catch (ArgumentException)
             {
@@ -1119,6 +1119,12 @@ public partial class MainWindow : Window
         }
 
         throw new InvalidOperationException("The terminal process exit code is unavailable.");
+    }
+
+    private static int ReadSystemProcessExitCode(System.Diagnostics.Process process)
+    {
+        process.WaitForExit();
+        return process.ExitCode;
     }
 
     private void HandleUnexpectedExit(TermPTY term)
