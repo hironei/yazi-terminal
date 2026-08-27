@@ -1,0 +1,49 @@
+{
+  "SchemaVersion": 1,
+  "Release": {
+    "Tag": "v1.0.2",
+    "ArchiveFileName": "YaziTerminal-v1.0.2-win-x64.zip",
+    "ArchiveSha256": "7D84FC3807A9509E84502A661AEBD1C3430E592E6738351C16117FC8C607FACA",
+    "EntryCount": 21,
+    "Entries": [
+      "conpty.dll",
+      "docs/user-manual.md",
+      "EasyWindowsTerminalControl.dll",
+      "LICENSE",
+      "Microsoft.Terminal.Control.dll",
+      "Microsoft.Terminal.Control.pdb",
+      "Microsoft.Terminal.Wpf.dll",
+      "README.md",
+      "THIRD-PARTY-NOTICES.md",
+      "third-party/EasyWindowsTerminalControl-MIT.txt",
+      "third-party/microsoft-terminal/LICENSE",
+      "third-party/microsoft-terminal/NOTICE.md",
+      "third-party/Microsoft-Windows-Console-ConPTY-MIT.txt",
+      "yazi-desktop-host.yazi/LICENSE",
+      "yazi-desktop-host.yazi/main.lua",
+      "yazi-desktop-host.yazi/README.md",
+      "YaziTerminal.deps.json",
+      "YaziTerminal.dll",
+      "YaziTerminal.exe",
+      "YaziTerminal.pdb",
+      "YaziTerminal.runtimeconfig.json"
+    ],
+    "Executable": {
+      "Path": "YaziTerminal.exe",
+      "FileVersion": "1.0.2",
+      "ProductVersion": "1.0.2+b4c8a22076d1e82ba046dec6f511cdd3bda107d1"
+    }
+  },
+  "Source": {
+    "Commit": "b4c8a22076d1e82ba046dec6f511cdd3bda107d1",
+    "PluginPath": "yazi-desktop-host.yazi/main.lua",
+    "PluginGitBlob": "36a7767ab1f9bfd20b5106409fdb94f6b2918533",
+    "PluginSha256": "F017D2E55266B4F1C61890B7500E15420FFA2D87182202F8E2FC046212F6B79A"
+  },
+  "Verification": {
+    "ArtifactInspection": "observed",
+    "PluginSourceInspection": "observed",
+    "HostProtocolTests": "record separately from this manifest",
+    "LiveYaziPluginFixture": "not-run"
+  }
+}
