@@ -92,6 +92,7 @@ var tests = new (string Name, Action Test)[]
     ("terminal paste recognizes Ctrl+Shift+V", TerminalPasteRecognizesControlShiftV),
     ("terminal paste recognizes Shift+Insert", TerminalPasteRecognizesShiftInsert),
     ("terminal paste rejects other gestures and repeats", TerminalPasteRejectsOtherGesturesAndRepeats),
+    ("terminal paste ignores negative mouse wheel messages", TerminalPasteIgnoresNegativeMouseWheelMessages),
     ("terminal paste ignores empty text", TerminalPasteIgnoresEmptyText),
     ("terminal paste frames Unicode and multiline text", TerminalPasteFramesUnicodeAndMultilineText),
 };
@@ -1727,6 +1728,19 @@ static void TerminalPasteRejectsOtherGesturesAndRepeats()
     Assert(!TerminalClipboardPaste.IsPasteShortcut(0x0100, 0x2D, true, true, false));
     Assert(!TerminalClipboardPaste.IsPasteShortcut(0x0100, 0x2D, false, false, false));
     Assert(!TerminalClipboardPaste.IsPasteShortcut(0x0006, 0x56, true, true, false));
+}
+
+static void TerminalPasteIgnoresNegativeMouseWheelMessages()
+{
+    const int wmMouseWheel = 0x020A;
+    var negativeWheelWParam = new IntPtr(unchecked((long)0xFF880000));
+
+    Assert(!TerminalClipboardPaste.IsPasteShortcut(
+        wmMouseWheel,
+        negativeWheelWParam,
+        IntPtr.Zero,
+        controlDown: true,
+        shiftDown: true));
 }
 
 static void TerminalPasteFramesUnicodeAndMultilineText()

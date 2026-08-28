@@ -12,6 +12,28 @@ internal static class TerminalClipboardPaste
 
     public static bool IsPasteShortcut(
         int message,
+        IntPtr wParam,
+        IntPtr lParam,
+        bool controlDown,
+        bool shiftDown)
+    {
+        if (message is not (WmKeyDown or WmSysKeyDown))
+        {
+            return false;
+        }
+
+        var isKeyRepeat = (lParam.ToInt64() & (1L << 30)) != 0;
+        var virtualKey = (int)(wParam.ToInt64() & 0xFFFFL);
+        return IsPasteShortcut(
+            message,
+            virtualKey,
+            controlDown,
+            shiftDown,
+            isKeyRepeat);
+    }
+
+    public static bool IsPasteShortcut(
+        int message,
         int virtualKey,
         bool controlDown,
         bool shiftDown,
