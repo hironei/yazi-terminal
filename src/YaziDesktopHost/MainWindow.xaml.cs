@@ -879,13 +879,12 @@ public partial class MainWindow : Window
         IntPtr wParam,
         IntPtr lParam)
     {
-        var isKeyRepeat = (lParam.ToInt64() & (1L << 30)) != 0;
         if (!TerminalClipboardPaste.IsPasteShortcut(
                 message,
-                wParam.ToInt32(),
+                wParam,
+                lParam,
                 IsKeyDown(VkControl),
-                IsKeyDown(VkShift),
-                isKeyRepeat))
+                IsKeyDown(VkShift)))
         {
             return false;
         }
