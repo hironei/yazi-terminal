@@ -95,6 +95,13 @@ var tests = new (string Name, Action Test)[]
     ("terminal paste ignores negative mouse wheel messages", TerminalPasteIgnoresNegativeMouseWheelMessages),
     ("terminal paste ignores empty text", TerminalPasteIgnoresEmptyText),
     ("terminal paste frames Unicode and multiline text", TerminalPasteFramesUnicodeAndMultilineText),
+    ("Kitty protocol filter drops a flags push", KittyProtocolFilterDropsFlagsPush),
+    ("Kitty protocol filter leaves queries and pops untouched", KittyProtocolFilterLeavesQueriesAndPopsUntouched),
+    ("Kitty protocol filter leaves unrelated escape sequences untouched", KittyProtocolFilterLeavesUnrelatedEscapeSequencesUntouched),
+    ("Kitty protocol filter drops a push split across chunks", KittyProtocolFilterDropsPushSplitAcrossChunks),
+    ("Kitty protocol filter drops a push split at every offset", KittyProtocolFilterDropsPushSplitAtEveryOffset),
+    ("Kitty protocol filter drops a zero-flag push", KittyProtocolFilterDropsZeroFlagPush),
+    ("Kitty protocol filter passes through plain text unchanged", KittyProtocolFilterPassesThroughPlainText),
 };
 
 var failures = new List<string>();
@@ -1748,6 +1755,84 @@ static void TerminalPasteFramesUnicodeAndMultilineText()
     const string text = "貼り付け\r\nsecond line";
     Assert(TerminalClipboardPaste.Frame(text)
         == "\u001b[200~貼り付け\r\nsecond line\u001b[201~");
+}
+
+static void KittyProtocolFilterDropsFlagsPush()
+{
+    var filter = new KittyKeyboardProtocolFilter();
+    var data = "before[>29uafter".ToCharArray().AsSpan();
+    filter.Process(ref data);
+    Assert(new string(data) == "beforeafter");
+}
+
+static void KittyProtocolFilterLeavesQueriesAndPopsUntouched()
+{
+    var filter = new KittyKeyboardProtocolFilter();
+    const string input = "before[?uquery[<upop after";
+    var data = input.ToCharArray().AsSpan();
+    filter.Process(ref data);
+    Assert(new string(data) == input);
+}
+
+static void KittyProtocolFilterLeavesUnrelatedEscapeSequencesUntouched()
+{
+    var filter = new KittyKeyboardProtocolFilter();
+    const string input = "before[38;5;196mred[0m after[>29umiddle[?utail";
+    var data = input.ToCharArray().AsSpan();
+    filter.Process(ref data);
+    Assert(new string(data) == "before[38;5;196mred[0m aftermiddle[?utail");
+}
+
+static void KittyProtocolFilterDropsPushSplitAcrossChunks()
+{
+    var filter = new KittyKeyboardProtocolFilter();
+    var chunks = new[] { "before", "[>", "2", "9", "u", "tail" };
+    var output = new StringBuilder();
+    foreach (var chunk in chunks)
+    {
+        var data = chunk.ToCharArray().AsSpan();
+        filter.Process(ref data);
+        output.Append(data);
+    }
+
+    Assert(output.ToString() == "beforetail");
+}
+
+static void KittyProtocolFilterDropsPushSplitAtEveryOffset()
+{
+    const string sequence = "[>29u";
+    for (var splitAt = 1; splitAt < sequence.Length; splitAt++)
+    {
+        var filter = new KittyKeyboardProtocolFilter();
+        var output = new StringBuilder();
+
+        var firstChunk = ("before" + sequence[..splitAt]).ToCharArray().AsSpan();
+        filter.Process(ref firstChunk);
+        output.Append(firstChunk);
+
+        var secondChunk = (sequence[splitAt..] + "after").ToCharArray().AsSpan();
+        filter.Process(ref secondChunk);
+        output.Append(secondChunk);
+
+        Assert(output.ToString() == "beforeafter");
+    }
+}
+
+static void KittyProtocolFilterDropsZeroFlagPush()
+{
+    var filter = new KittyKeyboardProtocolFilter();
+    var data = "before[>uafter".ToCharArray().AsSpan();
+    filter.Process(ref data);
+    Assert(new string(data) == "beforeafter");
+}
+
+static void KittyProtocolFilterPassesThroughPlainText()
+{
+    var filter = new KittyKeyboardProtocolFilter();
+    const string input = "yazi normal output with no escape sequences\r\n";
+    var data = input.ToCharArray().AsSpan();
+    filter.Process(ref data);
+    Assert(new string(data) == input);
 }
 
 static void TerminalPasteIgnoresEmptyText()
