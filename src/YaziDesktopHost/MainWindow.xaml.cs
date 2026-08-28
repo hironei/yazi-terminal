@@ -18,7 +18,6 @@ public partial class MainWindow : Window
     private readonly LastInstanceControlServer _lastInstanceServer;
     private EasyTerminalControl? _terminal;
     private TermPTY? _term;
-    private readonly KittyAlternateKeysFilter _kittyAlternateKeysFilter = new();
     private YaziBridgePipeServer? _bridgeServer;
     private YaziBridgeSession? _bridgeSession;
     private IDisposable? _bridgeEnvironment;
@@ -270,10 +269,7 @@ public partial class MainWindow : Window
             _bridgeEnvironment = YaziProcessLaunchConfiguration.EnterBridgeEnvironment(
                 instanceId,
                 _bridgeServer.PipePath);
-            _term = new TermPTY
-            {
-                InterceptOutputToUITerminal = _kittyAlternateKeysFilter.Process,
-            };
+            _term = new TermPTY();
             _terminal = new EasyTerminalControl
             {
                 StartupCommandLine = launch.CommandLine,
