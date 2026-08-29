@@ -2,23 +2,19 @@ namespace YaziDesktopHost;
 
 public static class YaziFileController
 {
-    public static string CreateRevealCommand(string filePath)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
-        return $"reveal \"{filePath}\"";
-    }
-
     public static async Task<bool> OpenAsync(
         string yaExecutable,
         string clientId,
         string filePath,
         CancellationToken cancellationToken = default)
     {
-        var revealCommand = CreateRevealCommand(filePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
+
         if (!await YaziCommandController.ExecuteAsync(
                 yaExecutable,
                 clientId,
-                revealCommand,
+                "reveal",
+                [filePath],
                 cancellationToken)
             .ConfigureAwait(false))
         {

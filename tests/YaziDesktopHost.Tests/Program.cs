@@ -55,7 +55,7 @@ var tests = new (string Name, Action Test)[]
     ("Yazi action command preserves argument boundaries", YaziActionCommandPreservesArgumentBoundaries),
     ("Yazi action sequence preserves binding order", YaziActionSequencePreservesBindingOrder),
     ("Yazi settings reveal command preserves the Windows path", YaziSettingsRevealCommandPreservesWindowsPath),
-    ("Yazi file opener reveals then opens the configured opener", YaziFileOpenerUsesRevealAndOpen),
+    ("Yazi file opener preserves a space-containing path as one argument", YaziFileOpenerPreservesSpacePathAsSingleArgument),
     ("Yazi action tokenizer handles quoted arguments", YaziActionTokenizerHandlesQuotedArguments),
     ("Yazi action tokenizer rejects unterminated quotes", YaziActionTokenizerRejectsUnterminatedQuotes),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
@@ -1309,13 +1309,14 @@ static void YaziSettingsRevealCommandPreservesWindowsPath()
         path]));
 }
 
-static void YaziFileOpenerUsesRevealAndOpen()
+static void YaziFileOpenerPreservesSpacePathAsSingleArgument()
 {
-    var path = @"C:\資料\space folder\notes.txt";
+    var path = @"C:\Program Files\Yazi Terminal\notes.txt";
     var revealStartInfo = YaziCommandController.CreateStartInfo(
         @"C:\tools\ya.exe",
         "12345",
-        YaziFileController.CreateRevealCommand(path));
+        "reveal",
+        [path]);
 
     Assert(revealStartInfo.ArgumentList.SequenceEqual([
         "emit-to",

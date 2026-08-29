@@ -18,6 +18,24 @@ public static class YaziCommandController
             throw new ArgumentException("The Yazi action is empty or malformed.", nameof(run));
         }
 
+        return CreateStartInfo(
+            yaExecutable,
+            clientId,
+            tokens[0],
+            tokens.Skip(1).ToArray());
+    }
+
+    public static ProcessStartInfo CreateStartInfo(
+        string yaExecutable,
+        string clientId,
+        string command,
+        IReadOnlyList<string> arguments)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(yaExecutable);
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(command);
+        ArgumentNullException.ThrowIfNull(arguments);
+
         var startInfo = new ProcessStartInfo
         {
             FileName = yaExecutable,
@@ -26,9 +44,10 @@ public static class YaziCommandController
         };
         startInfo.ArgumentList.Add("emit-to");
         startInfo.ArgumentList.Add(clientId);
-        foreach (var token in tokens)
+        startInfo.ArgumentList.Add(command);
+        foreach (var argument in arguments)
         {
-            startInfo.ArgumentList.Add(token);
+            startInfo.ArgumentList.Add(argument);
         }
 
         return startInfo;
@@ -41,6 +60,18 @@ public static class YaziCommandController
         CancellationToken cancellationToken = default)
     {
         return await ExecuteAsync(yaExecutable, clientId, [run], cancellationToken).ConfigureAwait(false);
+    }
+
+    public static Task<bool> ExecuteAsync(
+        string yaExecutable,
+        string clientId,
+        string command,
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken = default)
+    {
+        return ExecuteAsync(
+            CreateStartInfo(yaExecutable, clientId, command, arguments),
+            cancellationToken);
     }
 
     public static async Task<bool> ExecuteAsync(
