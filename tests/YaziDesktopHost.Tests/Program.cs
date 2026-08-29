@@ -81,7 +81,9 @@ var tests = new (string Name, Action Test)[]
     ("shell context IContextMenu3 failure remains unhandled", ShellContextMenu3FailureRemainsUnhandled),
     ("shell context menu does not enumerate menu text for logging", ShellContextMenuDoesNotEnumerateMenuTextForLogging),
     ("command palette filters theme commands", CommandPaletteFiltersThemeCommands),
+    ("command palette includes pinned Yazi manager commands", CommandPaletteIncludesPinnedYaziManagerCommands),
     ("command palette includes Yazi commands", CommandPaletteIncludesYaziCommands),
+    ("command palette replaces duplicate bundled Yazi commands", CommandPaletteReplacesDuplicateBundledYaziCommands),
     ("palette navigation handles empty lists and selection boundaries", PaletteNavigationHandlesEmptyListsAndSelectionBoundaries),
     ("palette navigation wraps at first and last rows", PaletteNavigationWrapsAtFirstAndLastRows),
     ("palette navigation uses j and k only for empty queries", PaletteNavigationUsesJAndKOnlyForEmptyQueries),
@@ -2105,11 +2107,38 @@ static void CommandPaletteIncludesYaziCommands()
             ["cd C:\\work", "plugin refresh"]),
     ]);
 
-    Assert(commands.Count == 4);
+    Assert(commands.Count == YaziDefaultManagerCommands.Commands.Count + 4);
     Assert(commands[^1].Id == PaletteCommandId.YaziAction);
     Assert(commands[^1].Title == "Yazi: Go work");
     var yaziCommand = CommandPaletteCommands.Filter(commands, "plugin refresh").Single().YaziCommand;
     Assert(yaziCommand?.ActionSequence.SequenceEqual(["cd C:\\work", "plugin refresh"]) == true);
+}
+
+static void CommandPaletteIncludesPinnedYaziManagerCommands()
+{
+    var commands = CommandPaletteCommands.WithYaziCommands([]);
+
+    Assert(YaziDefaultManagerCommands.PinnedYaziVersion == "26.5.6");
+    Assert(YaziDefaultManagerCommands.Commands.Count == 97);
+    Assert(YaziDefaultManagerCommands.SourcePath.Contains("[mgr].keymap", StringComparison.Ordinal));
+    Assert(YaziDefaultManagerCommands.SourceUrl.Contains("/v26.5.6/", StringComparison.Ordinal));
+    Assert(CommandPaletteCommands.Filter(commands, "Quit the process").Single().YaziCommand?.Run == "quit");
+    Assert(CommandPaletteCommands.Filter(commands, "Open selected files").Any(command =>
+        command.YaziCommand?.Run == "open"));
+
+    var sort = CommandPaletteCommands.Filter(commands, "sort mtime --reverse=no").Single().YaziCommand;
+    Assert(sort?.ActionSequence.SequenceEqual(["sort mtime --reverse=no", "linemode mtime"]) == true);
+}
+
+static void CommandPaletteReplacesDuplicateBundledYaziCommands()
+{
+    var commands = CommandPaletteCommands.WithYaziCommands([
+        new YaziBridgeCommand("F", "quit", "Custom quit command"),
+    ]);
+
+    Assert(commands.Count == YaziDefaultManagerCommands.Commands.Count + 3);
+    Assert(CommandPaletteCommands.Filter(commands, "Custom quit command").Single().YaziCommand?.Key == "F");
+    Assert(CommandPaletteCommands.Filter(commands, "Quit the process").Count == 0);
 }
 
 static void PaletteNavigationHandlesEmptyListsAndSelectionBoundaries()

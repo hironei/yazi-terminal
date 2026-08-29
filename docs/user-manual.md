@@ -543,6 +543,13 @@ version and host version differ, check Yazi's selected flavor and VT color
 capability first. Invalid or missing theme files do not prevent startup;
 unsupported host mappings use built-in fallbacks.
 
+The palette includes the standard Yazi manager action catalog from the pinned
+Yazi/`ya` 26.5.6 compatibility baseline, including standard key bindings,
+descriptions, and multi-action sequences. This is a version-pinned snapshot;
+newer Yazi defaults are not added until the host updates its pinned catalog.
+The catalog is for the `[mgr]` context only and does not represent the
+effective merged keymap of a different Yazi version.
+
 When the optional `yazi-desktop-host.yazi` bridge plugin is installed, the
 palette also lists manager actions from `[[mgr.prepend_keymap]]` and
 `[[mgr.append_keymap]]` in the configured Yazi `keymap.toml`, including their
@@ -550,8 +557,8 @@ descriptions and key bindings. A scalar `run` sends one action; a string-array
 `run` sends each action in its declared order through `ya emit-to`. Other
 keymap contexts are not listed because the palette targets the current Yazi
 manager. Plugin and `shell` actions remain owned and interpreted by Yazi. The
-catalog is read when the bridge connects, so restart Yazi Terminal after
-changing the keymap.
+user-defined catalog is read when the bridge connects, so restart Yazi
+Terminal after changing the keymap.
 
 The embedded terminal supports the normal Yazi interaction path, including:
 
