@@ -55,6 +55,14 @@ README, user manual, and the `yazi-desktop-host.yazi` directory.
 - Keep the redistribution manifest and `ThirdPartyRedistribution.props` in
   sync. A `verified` release requires every resolved package to be `verified`,
   complete notice files to be shipped, and the release ZIP hash check to pass.
+- Whenever the pinned Yazi version changes, and before every release, refresh
+  the Command Palette's bundled manager catalog from the matching official
+  Yazi manual and `yazi-config/preset/keymap-default.toml`. Update
+  `YaziDefaultManagerCommands.cs`, its pinned version/source metadata, the
+  related tests, and user-facing documentation together. Verify the complete
+  `[mgr].keymap` action set, including descriptions and multi-action order;
+  do not treat the catalog as current until the release-target Yazi version
+  has been checked.
 - Do not commit or push unless the user explicitly requests it.
 - Do not discard unrelated user changes, including the local `.codex/`
   directory.
