@@ -6,7 +6,8 @@ YaziTerminal's purpose is to integrate Yazi with Windows Explorer, including
 DragAndDrop workflows and context menus for Yazi targets.
 `EasyWindowsTerminalControl` 1.0.38 is the selected backend for the current
 implementation. It hosts the Windows Terminal renderer and ConPTY through a
-native terminal control; production packaging gates remain open.
+native terminal control; release packages are gated by the repository's
+third-party notice and archive validation checks.
 
 Start with the [user manual](docs/user-manual.md) for the supported environment,
 setup, validated capabilities, limitations, and license.
@@ -26,12 +27,10 @@ the MIT `LICENSE`, this documentation, and the Yazi bridge plugin.
 ### Binary release status
 
 The `CI.Microsoft.Terminal.Wpf` repackage has version-specific provenance
- evidence tied to Microsoft Terminal commit `9ae724aa...`; the full upstream
- Microsoft Terminal `LICENSE` and `NOTICE.md` are included in the release ZIP
- and validated by SHA-256. This is not a legal conclusion; see
- [the third-party notices](THIRD-PARTY-NOTICES.md) for the evidence. The
- v0.1.8 Release is retained, and its ZIP is replaced by a notice-complete
- repackaging with no executable-code changes.
+tied to Microsoft Terminal commit `9ae724aa...`; the full upstream Microsoft
+Terminal `LICENSE` and `NOTICE.md` are included in release ZIPs and validated
+by SHA-256. This is not a legal conclusion; see the
+[third-party notices](THIRD-PARTY-NOTICES.md) for the evidence.
 
 ## Developer setup
 

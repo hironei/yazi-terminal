@@ -618,6 +618,4 @@ Microsoft Terminal commit `9ae724aa...`; the full upstream Microsoft Terminal
 `LICENSE` and `NOTICE.md` are shipped and their exact SHA-256 values are
 validated in every release ZIP. This is an engineering provenance record, not a
 legal conclusion. See the repository's
-[third-party notices](../THIRD-PARTY-NOTICES.md) for the package evidence. The
-v0.1.8 Release is retained, while its old ZIP is replaced with a
-notice-complete repackaging; executable code is unchanged.
+[third-party notices](../THIRD-PARTY-NOTICES.md) for the package evidence.
