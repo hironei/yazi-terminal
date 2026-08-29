@@ -46,14 +46,24 @@ internal static class CommandPaletteCommands
         IReadOnlyList<YaziBridgeCommand> yaziCommands)
     {
         ArgumentNullException.ThrowIfNull(yaziCommands);
-        if (yaziCommands.Count == 0)
+        var mergedYaziCommands = YaziDefaultManagerCommands.Commands.ToList();
+        foreach (var yaziCommand in yaziCommands)
         {
-            return ThemeCommands;
+            var existingIndex = mergedYaziCommands.FindIndex(command =>
+                command.ActionSequence.SequenceEqual(yaziCommand.ActionSequence));
+            if (existingIndex >= 0)
+            {
+                mergedYaziCommands[existingIndex] = yaziCommand;
+            }
+            else
+            {
+                mergedYaziCommands.Add(yaziCommand);
+            }
         }
 
-        var commands = new List<CommandPaletteCommand>(ThemeCommands.Length + yaziCommands.Count);
+        var commands = new List<CommandPaletteCommand>(ThemeCommands.Length + mergedYaziCommands.Count);
         commands.AddRange(ThemeCommands);
-        commands.AddRange(yaziCommands.Select(command =>
+        commands.AddRange(mergedYaziCommands.Select(command =>
         {
             var title = string.IsNullOrWhiteSpace(command.Description)
                 ? $"Yazi: {command.DisplayRun}"
