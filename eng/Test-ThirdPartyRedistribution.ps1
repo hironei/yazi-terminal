@@ -11,7 +11,7 @@ if (-not (Test-Path -LiteralPath $ManifestPath -PathType Leaf)) {
 }
 
 try {
-    $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+    $manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 catch {
     throw "Redistribution manifest is not valid JSON: $ManifestPath. $($_.Exception.Message)"
@@ -134,7 +134,7 @@ foreach ($notice in @($manifest.requiredNoticeFiles)) {
         continue
     }
 
-    $content = Get-Content -LiteralPath $noticePath -Raw
+    $content = Get-Content -LiteralPath $noticePath -Raw -Encoding UTF8
     if ($null -eq $notice.requiredText -or $notice.requiredText.Count -eq 0) {
         $problems.Add("Required notice '$noticeFile' has no required text.")
         continue

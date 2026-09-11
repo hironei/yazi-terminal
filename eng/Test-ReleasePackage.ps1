@@ -13,7 +13,7 @@ param(
 $ErrorActionPreference = 'Stop'
 & (Join-Path $PSScriptRoot 'Test-ThirdPartyRedistribution.ps1') -ManifestPath $ManifestPath
 
-$manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+$manifest = Get-Content -LiteralPath $ManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 $archiveEntries = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $noticeTextByPath = @{}
 foreach ($notice in @($manifest.requiredNoticeFiles)) {
@@ -50,7 +50,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Directory') {
         $relative = $_.FullName.Substring($publishRoot.Length).TrimStart([char]'\', [char]'/').Replace('\', '/')
         [void] $archiveEntries.Add($relative)
         if ($noticeTextByPath.ContainsKey($relative)) {
-            $noticeContentByPath[$relative] = Get-Content -LiteralPath $_.FullName -Raw
+            $noticeContentByPath[$relative] = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8
         }
         if ($expectedHashByPath.ContainsKey($relative)) {
             $actualHashByPath[$relative] = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToUpperInvariant()

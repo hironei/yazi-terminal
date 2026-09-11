@@ -50,6 +50,16 @@ Run the executable test suite:
 dotnet run --project tests/YaziDesktopHost.Tests/YaziDesktopHost.Tests.csproj --no-build --no-restore
 ```
 
+Build, test, publish, and validate the Windows x64 release archive from a
+Windows command prompt:
+
+```bat
+eng\Build-Publish.bat
+```
+
+The batch file stops on the first failed command. It uses the release script to
+enforce the third-party redistribution gate and to validate the generated ZIP.
+
 Run the host with the .NET 10 SDK from the repository root:
 
 ```powershell
