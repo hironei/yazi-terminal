@@ -36,6 +36,12 @@ discard unrelated appearance settings.
 `WindowPlacementNative` owns the Win32 interop for `GetWindowPlacement`,
 `EnumDisplayMonitors`, `GetMonitorInfo`, `MonitorFromWindow`, `SetWindowPos`,
 and `ShowWindow`. It converts native structures to immutable domain values.
+Because `GetWindowPlacement.rcNormalPosition` is expressed in workspace
+coordinates for an ordinary top-level window, capture converts it to screen
+coordinates using the selected monitor's work-area offset before persisting it.
+The restore path therefore can clamp the saved rectangle and pass it directly
+to `SetWindowPos`, whose arguments are screen coordinates. The fallback capture
+path uses `GetWindowRect`, which is already in screen coordinates.
 The restore is deferred until after WPF's initial layout because WPF can
 overwrite native placement while the window is being initialized.
 The domain catalog owns selection, upsert, validation, and work-area clamping,

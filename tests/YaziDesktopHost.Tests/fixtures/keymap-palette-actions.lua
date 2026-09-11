@@ -19,4 +19,9 @@ assert(#commands[1].runs == 1 and commands[1].runs[1] == "cd C:\\workspace")
 assert(commands[2].key == "z + r")
 assert(#commands[2].runs == 2)
 assert(commands[2].runs[1] == "plugin refresh")
-assert(commands[2].runs[2] == "shell --confirm echo refreshed")
+assert(commands[2].runs[2] == 'shell --confirm echo "refreshed ]"')
+
+if arg[3] then
+	local malformed = plugin.parse_keymap_file(assert(arg[3]))
+	assert(#malformed == 0, "malformed run arrays must not be registered")
+end

@@ -1,0 +1,4 @@
+[[mgr.prepend_keymap]]
+on = "x"
+run = ["plugin first"] trailing-garbage
+desc = "Invalid trailing content"

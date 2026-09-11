@@ -60,15 +60,79 @@ end
 
 local function array_values(value)
 	local values = {}
-	for item in value:gmatch("\"([^\"]*)\"") do
-		table.insert(values, unescape_double_quoted(item))
-	end
-	if #values == 0 then
-		for item in value:gmatch("'([^']*)'") do
-			table.insert(values, item)
+	local index = 1
+	local length = #value
+	local function skip_whitespace()
+		while index <= length and value:sub(index, index):match("%s") do
+			index = index + 1
 		end
 	end
-	return values
+	local function finish_array()
+		index = index + 1
+		skip_whitespace()
+		local trailing = value:sub(index, index)
+		if trailing ~= "" and trailing ~= "#" then
+			return {}, "invalid"
+		end
+		return #values > 0 and values or {}, #values > 0 and "valid" or "invalid"
+	end
+
+	skip_whitespace()
+	if value:sub(index, index) ~= "[" then
+		return {}, "invalid"
+	end
+	index = index + 1
+
+	while true do
+		skip_whitespace()
+		local quote = value:sub(index, index)
+		if quote == "]" then
+			return finish_array()
+		end
+		if quote ~= "'" and quote ~= '"' then
+			return {}, index > length and "incomplete" or "invalid"
+		end
+
+		index = index + 1
+		local item = {}
+		local closed = false
+		while index <= length do
+			local character = value:sub(index, index)
+			if character == quote then
+				closed = true
+				index = index + 1
+				break
+			elseif quote == '"' and character == "\\"
+				and index + 1 <= length then
+				table.insert(item, character)
+				table.insert(item, value:sub(index + 1, index + 1))
+				index = index + 2
+			else
+				table.insert(item, character)
+				index = index + 1
+			end
+		end
+		if not closed then
+			return {}, "incomplete"
+		end
+
+		local item_value = table.concat(item)
+		if quote == '"' then
+			item_value = unescape_double_quoted(item_value)
+		end
+		table.insert(values, item_value)
+		skip_whitespace()
+		local separator = value:sub(index, index)
+		if separator == "," then
+			index = index + 1
+		elseif separator == "]" then
+			return finish_array()
+		elseif separator == "" then
+			return {}, "incomplete"
+		else
+			return {}, "invalid"
+		end
+	end
 end
 
 local function parse_keymap_file(path)
@@ -81,7 +145,7 @@ local function parse_keymap_file(path)
 	local current
 	local in_manager_keymap = false
 	local function save_current()
-		if current and current.runs and #current.runs > 0 then
+		if current and not current.invalid_run and current.runs and #current.runs > 0 then
 			current.run = current.runs[1]
 			table.insert(commands, current)
 		end
@@ -101,8 +165,12 @@ local function parse_keymap_file(path)
 		elseif in_manager_keymap and current and line ~= "" and not line:match("^#") then
 			if current.pending_run_array then
 				current.pending_run_array = current.pending_run_array .. "\n" .. line
-				if line:find("]", 1, true) then
-					current.runs = array_values(current.pending_run_array)
+				local runs, status = array_values(current.pending_run_array)
+				if status == "valid" then
+					current.runs = runs
+					current.pending_run_array = nil
+				elseif status == "invalid" then
+					current.invalid_run = true
 					current.pending_run_array = nil
 				end
 			else
@@ -112,7 +180,10 @@ local function parse_keymap_file(path)
 				else
 					local key_array = line:match("^on%s*=%s*%[([^%]]*)%]")
 					if key_array then
-						current.key = table.concat(array_values(key_array), " + ")
+						local keys, status = array_values("[" .. key_array .. "]")
+						if status == "valid" then
+							current.key = table.concat(keys, " + ")
+						end
 					end
 				end
 
@@ -127,8 +198,11 @@ local function parse_keymap_file(path)
 				else
 					local run_array = line:match("^run%s*=%s*(%[.*)$")
 					if run_array then
-						if run_array:find("]", 1, true) then
-							current.runs = array_values(run_array)
+						local runs, status = array_values(run_array)
+						if status == "valid" then
+							current.runs = runs
+						elseif status == "invalid" then
+							current.invalid_run = true
 						else
 							current.pending_run_array = run_array
 						end
