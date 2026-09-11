@@ -250,7 +250,8 @@ internal static class HostSettingsStore
             }
 
             var placements = persisted.Monitors
-                .Where(item => item.MonitorId is not null
+                .Where(item => item is not null
+                    && item.MonitorId is not null
                     && item.Left is not null
                     && item.Top is not null
                     && item.Right is not null

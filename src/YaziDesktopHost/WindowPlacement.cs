@@ -30,7 +30,10 @@ internal sealed record WindowPlacementSettings(
     string? LastMonitorId,
     IReadOnlyList<MonitorWindowPlacement> Monitors);
 
-internal sealed record ConnectedMonitor(string MonitorId, WindowBounds WorkArea);
+internal sealed record ConnectedMonitor(
+    string MonitorId,
+    WindowBounds WorkArea,
+    WindowBounds? MonitorBounds = null);
 
 internal static class WindowPlacementCatalog
 {
@@ -119,6 +122,31 @@ internal static class WindowPlacementCatalog
         return new WindowBounds(left, top, left + width, top + height);
     }
 
+    public static WindowBounds WorkspaceToScreen(
+        WindowBounds workspaceBounds,
+        ConnectedMonitor monitor)
+    {
+        ArgumentNullException.ThrowIfNull(monitor);
+        if (!workspaceBounds.IsValid || !monitor.WorkArea.IsValid)
+        {
+            return workspaceBounds;
+        }
+
+        var monitorBounds = monitor.MonitorBounds ?? monitor.WorkArea;
+        if (!monitorBounds.IsValid)
+        {
+            return workspaceBounds;
+        }
+
+        var offsetX = monitor.WorkArea.Left - monitorBounds.Left;
+        var offsetY = monitor.WorkArea.Top - monitorBounds.Top;
+        return new WindowBounds(
+            checked(workspaceBounds.Left + offsetX),
+            checked(workspaceBounds.Top + offsetY),
+            checked(workspaceBounds.Right + offsetX),
+            checked(workspaceBounds.Bottom + offsetY));
+    }
+
     private static bool IsValid(MonitorWindowPlacement placement)
     {
         return !string.IsNullOrWhiteSpace(placement.MonitorId)
@@ -145,6 +173,7 @@ internal static class WindowPlacementNative
 
         try
         {
+            var normalPositionIsScreenCoordinates = false;
             var nativePlacement = new WindowPlacement
             {
                 Length = Marshal.SizeOf<WindowPlacement>(),
@@ -157,6 +186,7 @@ internal static class WindowPlacementNative
                 }
 
                 nativePlacement.NormalPosition = windowRect;
+                normalPositionIsScreenCoordinates = true;
                 nativePlacement.ShowCommand = IsZoomed(windowHandle)
                     ? ShowMaximized
                     : ShowNormal;
@@ -176,13 +206,16 @@ internal static class WindowPlacementNative
             var showState = nativePlacement.ShowCommand == ShowMaximized
                 ? WindowPlacementShowState.Maximized
                 : WindowPlacementShowState.Normal;
+            var normalBounds = new WindowBounds(
+                nativePlacement.NormalPosition.Left,
+                nativePlacement.NormalPosition.Top,
+                nativePlacement.NormalPosition.Right,
+                nativePlacement.NormalPosition.Bottom);
             placement = new MonitorWindowPlacement(
                 monitor.MonitorId,
-                new WindowBounds(
-                    nativePlacement.NormalPosition.Left,
-                    nativePlacement.NormalPosition.Top,
-                    nativePlacement.NormalPosition.Right,
-                    nativePlacement.NormalPosition.Bottom),
+                normalPositionIsScreenCoordinates
+                    ? normalBounds
+                    : WindowPlacementCatalog.WorkspaceToScreen(normalBounds, monitor),
                 showState);
             return WindowPlacementCatalogIsValid(placement);
         }
@@ -295,7 +328,12 @@ internal static class WindowPlacementNative
                 info.WorkArea.Left,
                 info.WorkArea.Top,
                 info.WorkArea.Right,
-                info.WorkArea.Bottom));
+                info.WorkArea.Bottom),
+            new WindowBounds(
+                info.Monitor.Left,
+                info.Monitor.Top,
+                info.Monitor.Right,
+                info.Monitor.Bottom));
         return monitor.WorkArea.IsValid;
     }
 

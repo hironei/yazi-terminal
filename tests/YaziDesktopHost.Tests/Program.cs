@@ -64,6 +64,7 @@ var tests = new (string Name, Action Test)[]
     ("window placement settings round trip and ignore malformed placement", WindowPlacementSettingsRoundTripAndIgnoreMalformedPlacement),
     ("window placement catalog keeps per-monitor placements", WindowPlacementCatalogKeepsPerMonitorPlacements),
     ("window placement catalog selects connected fallback and clamps bounds", WindowPlacementCatalogSelectsConnectedFallbackAndClampsBounds),
+    ("window placement catalog converts workspace coordinates", WindowPlacementCatalogConvertsWorkspaceCoordinatesToScreenCoordinates),
     ("Yazi exit policy distinguishes known normal and abnormal exits", YaziExitPolicyDistinguishesKnownNormalAndAbnormalExits),
     ("Yazi exit policy treats completed process monitors as normal", YaziExitPolicyTreatsCompletedProcessMonitorAsNormal),
     ("Yazi exit policy preserves unknown process-monitor exits", YaziExitPolicyPreservesUnknownProcessMonitorExit),
@@ -1958,6 +1959,23 @@ static void WindowPlacementSettingsRoundTripAndIgnoreMalformedPlacement()
         Assert(malformed.FontFamily == "HackGen Console");
         Assert(malformed.FontSize == 18);
         Assert(malformed.WindowPlacement is null);
+
+        File.WriteAllText(
+            path,
+            "{\"Theme\":\"Light\",\"FontFamily\":\"HackGen Console\",\"FontSize\":18,\"WindowPlacement\":{\"LastMonitorId\":\"DISPLAY1\",\"Monitors\":[null,{\"MonitorId\":\"DISPLAY1\",\"Left\":0,\"Top\":0,\"Right\":1000,\"Bottom\":800,\"State\":\"Normal\"}]}}");
+        var nullRecord = HostSettingsStore.Load(path);
+        Assert(nullRecord.ThemeMode == AppThemeMode.Light);
+        Assert(nullRecord.FontFamily == "HackGen Console");
+        Assert(nullRecord.WindowPlacement?.Monitors.Count == 1);
+
+        File.WriteAllText(
+            path,
+            "{\"Theme\":\"Light\",\"FontFamily\":\"HackGen Console\",\"FontSize\":18,\"WindowPlacement\":{\"Monitors\":[null]}}");
+        var onlyNullRecord = HostSettingsStore.Load(path);
+        Assert(onlyNullRecord.ThemeMode == AppThemeMode.Light);
+        Assert(onlyNullRecord.FontFamily == "HackGen Console");
+        Assert(onlyNullRecord.FontSize == 18);
+        Assert(onlyNullRecord.WindowPlacement is null);
     }
     finally
     {
@@ -2022,6 +2040,20 @@ static void WindowPlacementCatalogSelectsConnectedFallbackAndClampsBounds()
 
     var lastMonitorAvailable = settings with { LastMonitorId = @"\\.\DISPLAY2" };
     Assert(WindowPlacementCatalog.Select(lastMonitorAvailable, connected)?.MonitorId == @"\\.\DISPLAY2");
+}
+
+static void WindowPlacementCatalogConvertsWorkspaceCoordinatesToScreenCoordinates()
+{
+    var monitor = new ConnectedMonitor(
+        @"\\.\DISPLAY1",
+        new WindowBounds(80, 40, 1920, 1040),
+        new WindowBounds(0, 0, 1920, 1080));
+
+    var screen = WindowPlacementCatalog.WorkspaceToScreen(
+        new WindowBounds(100, 120, 900, 720),
+        monitor);
+
+    Assert(screen == new WindowBounds(180, 160, 980, 760));
 }
 
 static void YaziThemeLoaderReadsSelectedFlavor()
