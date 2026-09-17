@@ -47,9 +47,21 @@ public partial class App : Application
                             ? LastInstanceControlCommand.ChangeDirectory
                             : LastInstanceControlCommand.OpenFile),
                     TimeSpan.FromSeconds(6));
-                if (sendStatus != LastInstanceSendStatus.Rejected)
+                if (ShouldExitAfterLastInstance(sendStatus))
                 {
                     Shutdown();
+                    return;
+                }
+
+                if (ShouldNotifyLastInstanceUnknown(sendStatus))
+                {
+                    AppLogger.Log("last_instance_handoff_unknown");
+                    MessageBox.Show(
+                        "Yazi Terminal could not confirm delivery to the existing window. No second window was opened.",
+                        "Yazi Terminal",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
+                    Shutdown(1);
                     return;
                 }
             }
@@ -58,6 +70,16 @@ public partial class App : Application
         var window = new MainWindow(options.InitialDirectory, options.FilePath);
         MainWindow = window;
         window.Show();
+    }
+
+    internal static bool ShouldExitAfterLastInstance(LastInstanceSendStatus status)
+    {
+        return status == LastInstanceSendStatus.Accepted;
+    }
+
+    internal static bool ShouldNotifyLastInstanceUnknown(LastInstanceSendStatus status)
+    {
+        return status == LastInstanceSendStatus.Unknown;
     }
 
     private void OnDispatcherUnhandledException(

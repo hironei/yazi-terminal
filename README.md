@@ -82,6 +82,7 @@ If the last instance explicitly rejects the request or is not available,
 `--last-instance` starts a new window with the requested directory. If the
 request was written but its acknowledgement was lost, the launcher does not
 open a second window because the existing instance may still be processing it.
+In that case it shows a warning before exiting so the handoff is not silent.
 
 From Git Bash, quote the executable and directory when either path contains
 spaces:

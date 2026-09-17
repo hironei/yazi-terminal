@@ -371,26 +371,33 @@ local function setup(state, opts)
 				local sequence = 0
 				local last_state
 				local last_state_sequence
+				local state_read_failed = false
 				local connected = send(fd, sequence, "hello", "{\"capabilities\":[\"snapshot\",\"state\",\"commands\",\"heartbeat\"]"
 					.. ",\"commands\":" .. json_commands(get_all_commands()) .. "}")
 				if connected then
 					while true do
-						local snapshot = get_state()
-						sequence = sequence + 1
-						local changed = not states_equal(last_state, snapshot)
-						local kind = not last_state and "snapshot" or "state"
-						local payload = kind == "snapshot"
-							and json_snapshot(path_kind, snapshot)
-							or changed
-							and json_state_update(path_kind, snapshot)
-							or json_heartbeat(snapshot.tab, last_state_sequence)
-						if not send(fd, sequence, kind, payload) then
-							connected = false
-							break
-						end
-						if kind == "snapshot" or changed then
-							last_state = snapshot
-							last_state_sequence = sequence
+						local read_ok, snapshot = pcall(get_state)
+						if read_ok and snapshot then
+							state_read_failed = false
+							sequence = sequence + 1
+							local changed = not states_equal(last_state, snapshot)
+							local kind = not last_state and "snapshot" or "state"
+							local payload = kind == "snapshot"
+								and json_snapshot(path_kind, snapshot)
+								or changed
+								and json_state_update(path_kind, snapshot)
+								or json_heartbeat(snapshot.tab, last_state_sequence)
+							if not send(fd, sequence, kind, payload) then
+								connected = false
+								break
+							end
+							if kind == "snapshot" or changed then
+								last_state = snapshot
+								last_state_sequence = sequence
+							end
+						elseif not state_read_failed then
+							state_read_failed = true
+							ya.err("yazi-desktop-host could not read manager state")
 						end
 						ya.sleep(interval)
 					end

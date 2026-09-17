@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
@@ -29,6 +30,7 @@ var tests = new (string Name, Action Test)[]
     ("last-instance control pipe accepts a file request", LastInstanceControlPipeAcceptsFileRequest),
     ("last-instance control pipe returns a negative ACK", LastInstanceControlPipeReturnsNegativeAcknowledgement),
     ("last-instance control server recovers after a malformed request", LastInstanceControlServerRecoversAfterMalformedRequest),
+    ("last-instance result keeps unknown handoffs from opening a second window", LastInstanceResultKeepsUnknownHandoffsFromOpeningASecondWindow),
     ("path requests serialize startup file open and last-instance ACK", PathRequestsSerializeStartupFileOpenAndLastInstanceAcknowledgement),
     ("path request batches remain contiguous", PathRequestBatchesRemainContiguous),
     ("bridge parser accepts a CJK snapshot", BridgeParserAcceptsCjkSnapshot),
@@ -44,6 +46,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
     ("bridge heartbeat refreshes matching state and rejects mismatches", BridgeHeartbeatRefreshesMatchingStateAndRejectsMismatches),
     ("bridge heartbeat capability controls freshness enforcement", BridgeHeartbeatCapabilityControlsFreshnessEnforcement),
+    ("bridge plugin reads state before every heartbeat", BridgePluginReadsStateBeforeEveryHeartbeat),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("bridge session publishes command catalog", BridgeSessionPublishesCommandCatalog),
@@ -67,8 +70,10 @@ var tests = new (string Name, Action Test)[]
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
     ("host settings accept custom font families and sizes", HostSettingsAcceptCustomFontFamiliesAndSizes),
     ("settings load distinguishes missing and failed files", SettingsLoadDistinguishesMissingAndFailedFiles),
-    ("settings save remains guarded after a failed load", SettingsSaveRemainsGuardedAfterFailedLoad),
+    ("settings save decision uses the actual load status", SettingsSaveDecisionUsesActualLoadStatus),
     ("settings save follows a file symlink", SettingsSaveFollowsFileSymlink),
+    ("settings save preserves a hard link", SettingsSavePreservesHardLink),
+    ("settings save notification is one-time and non-interactive at close", SettingsSaveNotificationIsOneTimeAndNonInteractiveAtClose),
     ("host settings round trip and reject blank or invalid values", HostSettingsRoundTripAndRejectsBlankOrInvalidValues),
     ("window placement settings round trip and ignore malformed placement", WindowPlacementSettingsRoundTripAndIgnoreMalformedPlacement),
     ("window placement catalog keeps per-monitor placements", WindowPlacementCatalogKeepsPerMonitorPlacements),
@@ -88,6 +93,7 @@ var tests = new (string Name, Action Test)[]
     ("shell target rejects unavailable, URLs, and empty state", ShellTargetRejectsUnavailableUrlsAndEmptyState),
     ("shell target rejects stale bridge state", ShellTargetRejectsStaleBridgeState),
     ("shell target uses monotonic freshness", ShellTargetUsesMonotonicFreshness),
+    ("right-click release preserves button-down interception", RightClickReleasePreservesButtonDownInterception),
     ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
     ("shell context IContextMenu3 forwards LRESULT", ShellContextMenu3ForwardsLresult),
     ("shell context IContextMenu3 failure remains unhandled", ShellContextMenu3FailureRemainsUnhandled),
@@ -650,6 +656,15 @@ static void LastInstanceControlServerRecoversAfterMalformedRequest()
     }
 }
 
+static void LastInstanceResultKeepsUnknownHandoffsFromOpeningASecondWindow()
+{
+    Assert(App.ShouldExitAfterLastInstance(LastInstanceSendStatus.Accepted));
+    Assert(!App.ShouldExitAfterLastInstance(LastInstanceSendStatus.Rejected));
+    Assert(!App.ShouldExitAfterLastInstance(LastInstanceSendStatus.Unknown));
+    Assert(App.ShouldNotifyLastInstanceUnknown(LastInstanceSendStatus.Unknown));
+    Assert(!App.ShouldNotifyLastInstanceUnknown(LastInstanceSendStatus.Rejected));
+}
+
 static void PathRequestsSerializeStartupFileOpenAndLastInstanceAcknowledgement()
 {
     var directory = Directory.CreateTempSubdirectory("yazi-path-transaction-");
@@ -968,6 +983,18 @@ static void BridgeHeartbeatCapabilityControlsFreshnessEnforcement()
         DateTimeOffset.UtcNow,
         TimeSpan.FromSeconds(1));
     Assert(result.Status == YaziShellTargetStatus.Available);
+}
+
+static void BridgePluginReadsStateBeforeEveryHeartbeat()
+{
+    var source = File.ReadAllText(RepositoryFile("yazi-desktop-host.yazi", "main.lua"));
+    Assert(source.Contains("local read_ok, snapshot = pcall(get_state)", StringComparison.Ordinal));
+    Assert(source.Contains("local changed = not states_equal(last_state, snapshot)", StringComparison.Ordinal));
+    Assert(source.Contains("or json_heartbeat(snapshot.tab, last_state_sequence)", StringComparison.Ordinal));
+    Assert(source.Contains("elseif not state_read_failed", StringComparison.Ordinal));
+    var normalized = source.Replace("\r\n", "\n", StringComparison.Ordinal);
+    Assert(!normalized.Contains("ps.sub(event", StringComparison.Ordinal));
+    Assert(!normalized.Contains("state.dirty", StringComparison.Ordinal));
 }
 
 static void BridgePipeRoundTripsFrame()
@@ -1840,6 +1867,14 @@ static void ShellTargetUsesMonotonicFreshness()
     Assert(stale.Reason == "bridge-stale");
 }
 
+static void RightClickReleasePreservesButtonDownInterception()
+{
+    Assert(MainWindow.ShouldSuppressRightClickRelease(interceptedAtButtonDown: true, shellMenuQueued: false));
+    Assert(MainWindow.ShouldSuppressRightClickRelease(interceptedAtButtonDown: true, shellMenuQueued: true));
+    Assert(MainWindow.ShouldSuppressRightClickRelease(interceptedAtButtonDown: false, shellMenuQueued: true));
+    Assert(!MainWindow.ShouldSuppressRightClickRelease(interceptedAtButtonDown: false, shellMenuQueued: false));
+}
+
 static void ShellContextComInterfacesPreserveNativeVtableOrder()
 {
     var serviceType = typeof(WindowsShellContextMenuService);
@@ -2273,10 +2308,23 @@ static void SettingsLoadDistinguishesMissingAndFailedFiles()
     }
 }
 
-static void SettingsSaveRemainsGuardedAfterFailedLoad()
+static void SettingsSaveDecisionUsesActualLoadStatus()
 {
-    Assert(!MainWindow.CanSaveSettings(settingsLoadFailed: true));
-    Assert(MainWindow.CanSaveSettings(settingsLoadFailed: false));
+    var path = Path.Combine(Path.GetTempPath(), $"yazi-settings-decision-{Guid.NewGuid():N}.json");
+    try
+    {
+        var missing = HostSettingsStore.LoadWithStatus(path);
+        Assert(MainWindow.CanSaveSettings(false, missing.Status));
+
+        File.WriteAllText(path, "{ invalid json");
+        var failed = HostSettingsStore.LoadWithStatus(path);
+        Assert(!MainWindow.CanSaveSettings(false, failed.Status));
+        Assert(!MainWindow.CanSaveSettings(true, missing.Status));
+    }
+    finally
+    {
+        File.Delete(path);
+    }
 }
 
 static void SettingsSaveFollowsFileSymlink()
@@ -2312,6 +2360,45 @@ static void SettingsSaveFollowsFileSymlink()
     {
         directory.Delete(recursive: true);
     }
+}
+
+static void SettingsSavePreservesHardLink()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-settings-hard-link-");
+    var targetPath = Path.Combine(directory.FullName, "target.json");
+    var linkPath = Path.Combine(directory.FullName, "settings.json");
+    try
+    {
+        HostSettingsStore.Save(HostSettings.Defaults, targetPath);
+        Assert(HostSettingsStore.TryGetHardLinkCount(targetPath, out var singleLinkCount));
+        Assert(singleLinkCount == 1);
+        if (!TestNativeMethods.CreateHardLink(linkPath, targetPath, IntPtr.Zero))
+        {
+            throw new InvalidOperationException("Could not create the hard-link test fixture.");
+        }
+
+        Assert(HostSettingsStore.TryGetHardLinkCount(targetPath, out var beforeCount));
+        Assert(beforeCount >= 2);
+        HostSettingsStore.Save(
+            new HostSettings(AppThemeMode.Light, "MS Gothic", 18),
+            linkPath);
+
+        Assert(HostSettingsStore.TryGetHardLinkCount(targetPath, out var afterCount));
+        Assert(afterCount >= 2);
+        Assert(HostSettingsStore.Load(targetPath).ThemeMode == AppThemeMode.Light);
+        Assert(HostSettingsStore.Load(linkPath).FontSize == 18);
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
+    }
+}
+
+static void SettingsSaveNotificationIsOneTimeAndNonInteractiveAtClose()
+{
+    Assert(MainWindow.ShouldNotifySettingsSaveSkipped(isClosing: false, notificationAlreadyShown: false));
+    Assert(!MainWindow.ShouldNotifySettingsSaveSkipped(isClosing: false, notificationAlreadyShown: true));
+    Assert(!MainWindow.ShouldNotifySettingsSaveSkipped(isClosing: true, notificationAlreadyShown: false));
 }
 
 static void WindowPlacementSettingsRoundTripAndIgnoreMalformedPlacement()
@@ -2610,6 +2697,29 @@ static void AssertDeclaredMethods(Type declaringType, string nestedTypeName, par
     Assert(actualNames.SequenceEqual(expectedNames));
 }
 
+static string RepositoryFile(params string[] parts)
+{
+    for (var directory = new DirectoryInfo(AppContext.BaseDirectory);
+         directory is not null;
+         directory = directory.Parent)
+    {
+        if (!File.Exists(Path.Combine(directory.FullName, "YaziDesktopHost.slnx")))
+        {
+            continue;
+        }
+
+        var path = directory.FullName;
+        foreach (var part in parts)
+        {
+            path = Path.Combine(path, part);
+        }
+
+        return path;
+    }
+
+    throw new InvalidOperationException("Could not locate the repository root.");
+}
+
 static YaziBridgeState AvailableState(YaziBridgePath? hovered, IReadOnlyList<YaziBridgePath> selected) =>
     new(
         Guid.NewGuid(),
@@ -2679,6 +2789,16 @@ static void Assert(bool condition)
     {
         throw new InvalidOperationException("Assertion failed.");
     }
+}
+
+static class TestNativeMethods
+{
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool CreateHardLink(
+        string fileName,
+        string existingFileName,
+        IntPtr securityAttributes);
 }
 
 sealed class FakeShellContextMenuMessageHandler : IShellContextMenuMessageHandler
