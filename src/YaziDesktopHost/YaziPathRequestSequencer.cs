@@ -35,21 +35,55 @@ internal sealed class YaziPathRequestSequencer
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return request.Kind switch
-            {
-                YaziPathRequestKind.ChangeDirectory => await _controller
-                    .ChangeDirectoryAsync(request.Path, cancellationToken)
-                    .ConfigureAwait(false),
-                YaziPathRequestKind.OpenFile => await _controller
-                    .OpenFileAsync(request.Path, cancellationToken)
-                    .ConfigureAwait(false),
-                _ => throw new ArgumentOutOfRangeException(nameof(request), request.Kind, null),
-            };
+            return await ExecuteRequestAsync(request, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    public async Task<bool> ExecuteBatchAsync(
+        Func<IReadOnlyList<YaziPathRequest>> requestFactory,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(requestFactory);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var requests = requestFactory();
+            ArgumentNullException.ThrowIfNull(requests);
+            foreach (var request in requests)
+            {
+                ArgumentNullException.ThrowIfNull(request);
+                if (!await ExecuteRequestAsync(request, cancellationToken).ConfigureAwait(false))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private Task<bool> ExecuteRequestAsync(
+        YaziPathRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Path);
+        return request.Kind switch
+        {
+            YaziPathRequestKind.ChangeDirectory => _controller
+                .ChangeDirectoryAsync(request.Path, cancellationToken),
+            YaziPathRequestKind.OpenFile => _controller
+                .OpenFileAsync(request.Path, cancellationToken),
+            _ => throw new ArgumentOutOfRangeException(nameof(request), request.Kind, null),
+        };
     }
 }
 

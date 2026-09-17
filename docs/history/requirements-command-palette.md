@@ -1,5 +1,11 @@
 # Requirements: Command Palette, Yazi Actions, and Light Theme Contrast
 
+> Historical note: the original bounded font list in this design was
+> superseded by the implementation decision recorded for Issue #82. The
+> current host accepts any installed WPF font family and sizes from 1 through
+> 32767, matching the terminal backend's short boundary. See
+> requirements-issues72-83.md.
+
 ## Goal
 
 Replace the permanent theme menu with a keyboard-first command palette,

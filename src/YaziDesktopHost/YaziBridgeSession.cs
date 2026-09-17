@@ -121,6 +121,11 @@ public sealed class YaziBridgeSession : IAsyncDisposable
                 {
                     reason = "io-error";
                 }
+                catch (Exception exception)
+                {
+                    reason = "unexpected-error";
+                    AppLogger.Log("yazi_bridge_connection_failed", exception);
+                }
                 finally
                 {
                     connection?.Dispose();
@@ -164,6 +169,11 @@ public sealed class YaziBridgeSession : IAsyncDisposable
             {
                 message = _parser.Parse(frame, _instanceId);
                 _reducer.Apply(message);
+                if (_reducer.ConnectionRejected)
+                {
+                    return "protocol-error";
+                }
+
                 if (message.Kind == YaziBridgeMessageKind.Hello)
                 {
                     SetCommands(_commandCatalogParser.Parse(message.Payload));

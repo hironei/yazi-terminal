@@ -28,10 +28,11 @@ var tests = new (string Name, Action Test)[]
     ("last-instance control pipe accepts a file request", LastInstanceControlPipeAcceptsFileRequest),
     ("last-instance control pipe returns a negative ACK", LastInstanceControlPipeReturnsNegativeAcknowledgement),
     ("path requests serialize startup file open and last-instance ACK", PathRequestsSerializeStartupFileOpenAndLastInstanceAcknowledgement),
+    ("path request batches remain contiguous", PathRequestBatchesRemainContiguous),
     ("bridge parser accepts a CJK snapshot", BridgeParserAcceptsCjkSnapshot),
     ("bridge parser accepts a command catalog", BridgeParserAcceptsCommandCatalog),
     ("bridge parser preserves command run sequence", BridgeParserPreservesCommandRunSequence),
-    ("bridge parser rejects an invalid command catalog", BridgeParserRejectsInvalidCommandCatalog),
+    ("bridge parser skips invalid command entries", BridgeParserSkipsInvalidCommandEntries),
     ("bridge parser rejects a wrong instance", BridgeParserRejectsWrongInstance),
     ("bridge reducer applies an ordered update", BridgeReducerAppliesOrderedUpdate),
     ("bridge reducer invalidates a sequence gap", BridgeReducerInvalidatesSequenceGap),
@@ -42,6 +43,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("bridge session publishes command catalog", BridgeSessionPublishesCommandCatalog),
+    ("bridge session closes a rejected connection", BridgeSessionClosesRejectedConnection),
     ("Phase 2 AC 138 parser accepts valid UTF-8 snapshot", Phase2Ac138ParserAcceptsValidUtf8Snapshot),
     ("Phase 2 AC 139 parser and frame reader reject invalid frames", Phase2Ac139ParserAndFrameReaderRejectInvalidFrames),
     ("Phase 2 AC 140 reducer rejects invalid path kinds and required fields", Phase2Ac140ReducerRejectsInvalidPathKindsAndRequiredFields),
@@ -60,6 +62,7 @@ var tests = new (string Name, Action Test)[]
     ("Yazi action tokenizer rejects unterminated quotes", YaziActionTokenizerRejectsUnterminatedQuotes),
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
     ("host settings accept custom font families and sizes", HostSettingsAcceptCustomFontFamiliesAndSizes),
+    ("settings load distinguishes missing and failed files", SettingsLoadDistinguishesMissingAndFailedFiles),
     ("host settings round trip and reject blank or invalid values", HostSettingsRoundTripAndRejectsBlankOrInvalidValues),
     ("window placement settings round trip and ignore malformed placement", WindowPlacementSettingsRoundTripAndIgnoreMalformedPlacement),
     ("window placement catalog keeps per-monitor placements", WindowPlacementCatalogKeepsPerMonitorPlacements),
@@ -77,6 +80,7 @@ var tests = new (string Name, Action Test)[]
     ("shell target normalizes file URI", ShellTargetNormalizesFileUri),
     ("shell target resolves current directory", ShellTargetResolvesCurrentDirectory),
     ("shell target rejects unavailable, URLs, and empty state", ShellTargetRejectsUnavailableUrlsAndEmptyState),
+    ("shell target rejects stale bridge state", ShellTargetRejectsStaleBridgeState),
     ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
     ("shell context IContextMenu3 forwards LRESULT", ShellContextMenu3ForwardsLresult),
     ("shell context IContextMenu3 failure remains unhandled", ShellContextMenu3FailureRemainsUnhandled),
@@ -98,6 +102,7 @@ var tests = new (string Name, Action Test)[]
     ("terminal paste ignores negative mouse wheel messages", TerminalPasteIgnoresNegativeMouseWheelMessages),
     ("terminal paste ignores empty text", TerminalPasteIgnoresEmptyText),
     ("terminal paste frames Unicode and multiline text", TerminalPasteFramesUnicodeAndMultilineText),
+    ("app logger rotates an oversized file", AppLoggerRotatesOversizedFile),
     ("Kitty protocol filter drops a flags push", KittyProtocolFilterDropsFlagsPush),
     ("Kitty protocol filter leaves queries and pops untouched", KittyProtocolFilterLeavesQueriesAndPopsUntouched),
     ("Kitty protocol filter leaves unrelated escape sequences untouched", KittyProtocolFilterLeavesUnrelatedEscapeSequencesUntouched),
@@ -601,6 +606,36 @@ static void PathRequestsSerializeStartupFileOpenAndLastInstanceAcknowledgement()
     }
 }
 
+static void PathRequestBatchesRemainContiguous()
+{
+    var controller = new DelayedPathTransactionController();
+    var sequencer = new YaziPathRequestSequencer(controller);
+    var first = sequencer.ExecuteAsync(new YaziPathRequest(
+        YaziPathRequestKind.OpenFile,
+        @"C:\work\first.txt"));
+    Assert(controller.OpenRevealStarted.Wait(TimeSpan.FromSeconds(2)));
+
+    var factoryCalled = false;
+    var batch = sequencer.ExecuteBatchAsync(() =>
+    {
+        factoryCalled = true;
+        return [
+            new YaziPathRequest(YaziPathRequestKind.OpenFile, @"C:\work\settings.json"),
+            new YaziPathRequest(YaziPathRequestKind.ChangeDirectory, @"C:\work"),
+        ];
+    });
+    Assert(!factoryCalled);
+
+    controller.AllowOpen();
+    Assert(first.GetAwaiter().GetResult());
+    Assert(controller.ChangeDirectoryStarted.Wait(TimeSpan.FromSeconds(2)));
+    Assert(factoryCalled);
+    Assert(controller.Operations.SequenceEqual(["reveal A", "open A", "reveal A", "open A", "cd B"]));
+
+    controller.AllowChangeDirectory();
+    Assert(batch.GetAwaiter().GetResult());
+}
+
 static void BridgeParserAcceptsCjkSnapshot()
 {
     var instanceId = Guid.NewGuid();
@@ -659,14 +694,20 @@ static void BridgeParserPreservesCommandRunSequence()
     Assert(command.DisplayRun == "cd C:\\work → plugin refresh");
 }
 
-static void BridgeParserRejectsInvalidCommandCatalog()
+static void BridgeParserSkipsInvalidCommandEntries()
 {
     using var document = JsonDocument.Parse("""
-        { "commands": [{ "key": "q", "run": "   ", "description": "Quit" }] }
+        {
+          "commands": [
+            { "key": "q", "run": "   ", "description": "Invalid" },
+            { "key": "o", "run": "open", "description": "Open" }
+          ]
+        }
         """);
 
-    Expect<YaziBridgeProtocolException>(() =>
-        new YaziBridgeCommandCatalogParser().Parse(document.RootElement));
+    var commands = new YaziBridgeCommandCatalogParser().Parse(document.RootElement);
+
+    Assert(commands.SequenceEqual([new YaziBridgeCommand("o", "open", "Open")]));
 }
 
 static void BridgeParserRejectsWrongInstance()
@@ -931,6 +972,48 @@ static void BridgeSessionPublishesCommandCatalog()
     }
 }
 
+static void BridgeSessionClosesRejectedConnection()
+{
+    var instanceId = Guid.NewGuid();
+    using var server = new YaziBridgePipeServer(instanceId);
+    var session = new YaziBridgeSession(instanceId, server);
+    var reasons = new List<string>();
+    var states = new List<YaziBridgeState?>();
+    session.Disconnected += reason =>
+    {
+        lock (reasons)
+        {
+            reasons.Add(reason);
+        }
+    };
+    session.StateChanged += state =>
+    {
+        lock (states)
+        {
+            states.Add(state);
+        }
+    };
+
+    var runTask = session.RunAsync();
+    using (var client = ConnectBridgeClient(server.PipeName))
+    {
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 1));
+        SendFrame(client, StateFrame(instanceId, 3));
+    }
+
+    WaitUntil(() => HasReason(reasons, "protocol-error"));
+    using (var client = ConnectBridgeClient(server.PipeName))
+    {
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 1));
+        WaitUntil(() => CountAvailableStates(states) >= 2);
+    }
+
+    session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    runTask.GetAwaiter().GetResult();
+}
+
 static void Phase2Ac138ParserAcceptsValidUtf8Snapshot()
 {
     var instanceId = Guid.NewGuid();
@@ -1108,7 +1191,7 @@ static void Phase2Ac143SessionRejectsGoodbyeAndErrorThenRequiresSnapshot()
         WaitUntil(() => CountNullStates(states) > nullStateCount);
     }
 
-    WaitUntil(() => HasReason(reasons, "disconnect"));
+    WaitUntil(() => reasons.Count(reason => reason == "protocol-error") >= 2);
     var availableStateCount = CountAvailableStates(states);
     using (var client = ConnectBridgeClient(server.PipeName))
     {
@@ -1553,6 +1636,26 @@ static void ShellTargetRejectsUnavailableUrlsAndEmptyState()
     Assert(empty.Status == YaziShellTargetStatus.Empty);
 }
 
+static void ShellTargetRejectsStaleBridgeState()
+{
+    var now = DateTimeOffset.UtcNow;
+    var stale = AvailableState(
+        hovered: new YaziBridgePath(YaziBridgePathKind.Filesystem, @"C:\work\hovered.txt"),
+        selected: []) with
+    {
+        LastUpdated = now - TimeSpan.FromSeconds(2),
+    };
+
+    var result = YaziShellTargetResolver.Resolve(
+        stale,
+        YaziShellInvocation.SelectedOrHovered,
+        now,
+        TimeSpan.FromSeconds(1));
+
+    Assert(result.Status == YaziShellTargetStatus.Unavailable);
+    Assert(result.Reason == "bridge-stale");
+}
+
 static void ShellContextComInterfacesPreserveNativeVtableOrder()
 {
     var serviceType = typeof(WindowsShellContextMenuService);
@@ -1761,6 +1864,25 @@ static void TerminalPasteFramesUnicodeAndMultilineText()
         == "\u001b[200~貼り付け\r\nsecond line\u001b[201~");
 }
 
+static void AppLoggerRotatesOversizedFile()
+{
+    var path = Path.Combine(Path.GetTempPath(), $"yazi-app-log-{Guid.NewGuid():N}.log");
+    var archivePath = path + ".1";
+    try
+    {
+        File.WriteAllText(path, "0123456789");
+        AppLogger.AppendLine(path, "new", maxBytes: 10);
+
+        Assert(File.ReadAllText(archivePath) == "0123456789");
+        Assert(File.ReadAllText(path) == "new");
+    }
+    finally
+    {
+        File.Delete(path);
+        File.Delete(archivePath);
+    }
+}
+
 static void KittyProtocolFilterDropsFlagsPush()
 {
     var filter = new KittyKeyboardProtocolFilter();
@@ -1921,6 +2043,25 @@ static void HostSettingsAcceptCustomFontFamiliesAndSizes()
     Assert(!HostSettingsCatalog.IsValidFontSize(short.MaxValue + 1));
     Assert(HostSettingsCatalog.DefaultFontFamily == "MS Gothic");
     Assert(HostSettingsCatalog.DefaultFontSize == 14);
+}
+
+static void SettingsLoadDistinguishesMissingAndFailedFiles()
+{
+    var path = Path.Combine(Path.GetTempPath(), $"yazi-settings-status-{Guid.NewGuid():N}.json");
+    try
+    {
+        var missing = HostSettingsStore.LoadWithStatus(path);
+        Assert(missing.Status == HostSettingsLoadStatus.Missing);
+
+        File.WriteAllText(path, "{ invalid json");
+        var failed = HostSettingsStore.LoadWithStatus(path);
+        Assert(failed.Status == HostSettingsLoadStatus.Failed);
+        Assert(failed.Settings == HostSettings.Defaults);
+    }
+    finally
+    {
+        File.Delete(path);
+    }
 }
 
 static void WindowPlacementSettingsRoundTripAndIgnoreMalformedPlacement()
@@ -2227,7 +2368,8 @@ static YaziBridgeState AvailableState(YaziBridgePath? hovered, IReadOnlyList<Yaz
         new YaziBridgePath(YaziBridgePathKind.Filesystem, @"C:\work"),
         hovered,
         selected,
-        YaziBridgeAvailability.Available);
+        YaziBridgeAvailability.Available,
+        DateTimeOffset.UtcNow);
 
 static byte[] SnapshotFrame(Guid instanceId, ulong sequence) => Frame(
     instanceId,

@@ -33,15 +33,37 @@ public sealed record YaziShellTargetResolution(
 
 public static class YaziShellTargetResolver
 {
+    public static readonly TimeSpan DefaultMaxStateAge = TimeSpan.FromSeconds(1);
+
     public static YaziShellTargetResolution Resolve(
         YaziBridgeState? state,
         YaziShellInvocation invocation)
+    {
+        return Resolve(
+            state,
+            invocation,
+            DateTimeOffset.UtcNow,
+            DefaultMaxStateAge);
+    }
+
+    internal static YaziShellTargetResolution Resolve(
+        YaziBridgeState? state,
+        YaziShellInvocation invocation,
+        DateTimeOffset now,
+        TimeSpan maxStateAge)
     {
         if (state is null || state.Availability != YaziBridgeAvailability.Available)
         {
             return YaziShellTargetResolution.Rejected(
                 YaziShellTargetStatus.Unavailable,
                 "bridge-unavailable");
+        }
+
+        if (now - state.LastUpdated > maxStateAge)
+        {
+            return YaziShellTargetResolution.Rejected(
+                YaziShellTargetStatus.Unavailable,
+                "bridge-stale");
         }
 
         IReadOnlyList<YaziBridgePath> paths = invocation switch
