@@ -1,4 +1,6 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace YaziDesktopHost;
 
@@ -49,12 +51,45 @@ internal static class AppLogger
 
         lock (SyncRoot)
         {
-            if (File.Exists(path) && new FileInfo(path).Length >= maxBytes)
+            using var mutex = new Mutex(false, CreateMutexName(path));
+            var acquired = false;
+            try
             {
-                File.Move(path, path + ".1", overwrite: true);
-            }
+                try
+                {
+                    acquired = mutex.WaitOne(TimeSpan.FromSeconds(2));
+                }
+                catch (AbandonedMutexException)
+                {
+                    acquired = true;
+                }
 
-            File.AppendAllText(path, line);
+                if (!acquired)
+                {
+                    throw new IOException("Could not acquire the application log mutex.");
+                }
+
+                if (File.Exists(path) && new FileInfo(path).Length >= maxBytes)
+                {
+                    File.Move(path, path + ".1", overwrite: true);
+                }
+
+                File.AppendAllText(path, line);
+            }
+            finally
+            {
+                if (acquired)
+                {
+                    mutex.ReleaseMutex();
+                }
+            }
         }
+    }
+
+    private static string CreateMutexName(string path)
+    {
+        var normalizedPath = Path.GetFullPath(path).ToUpperInvariant();
+        var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalizedPath)));
+        return $@"Local\YaziTerminal-log-{digest[..32]}";
     }
 }

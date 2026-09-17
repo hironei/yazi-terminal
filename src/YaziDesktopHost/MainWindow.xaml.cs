@@ -498,7 +498,6 @@ public partial class MainWindow : Window
 
         if (settingsLoad.Status == HostSettingsLoadStatus.Missing)
         {
-            _settingsLoadFailed = false;
             return;
         }
 
@@ -760,7 +759,7 @@ public partial class MainWindow : Window
             var invocation = IsKeyDown(VkShift)
                 ? YaziShellInvocation.CurrentDirectory
                 : YaziShellInvocation.SelectedOrHovered;
-            _rightClickInvocation = CanInterceptShellContextMenu()
+            _rightClickInvocation = CanInterceptShellContextMenu(invocation)
                 ? invocation
                 : null;
             if (_rightClickInvocation is not null)
@@ -780,7 +779,8 @@ public partial class MainWindow : Window
             var invocation = _rightClickInvocation ?? (IsKeyDown(VkShift)
                 ? YaziShellInvocation.CurrentDirectory
                 : YaziShellInvocation.SelectedOrHovered);
-            var suppressNormalInput = _rightClickInvocation is not null;
+            var suppressNormalInput = _rightClickInvocation is not null
+                && CanInterceptShellContextMenu(invocation);
             _rightClickInvocation = null;
             if (TryQueueShellContextMenu(
                     invocation,
@@ -845,9 +845,10 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private bool CanInterceptShellContextMenu()
+    private bool CanInterceptShellContextMenu(YaziShellInvocation invocation)
     {
-        return _bridgeSession?.State?.Availability == YaziBridgeAvailability.Available;
+        return YaziShellTargetResolver.Resolve(_bridgeSession?.State, invocation).Status
+            == YaziShellTargetStatus.Available;
     }
 
     private bool HandleTerminalWindowMessage(
@@ -875,7 +876,7 @@ public partial class MainWindow : Window
         {
             AppLogger.Log(
                 $"shell_context_menu_native_message_{MessageName(message)}_hwnd_{hwnd.ToInt64():X}"
-                + $"_shift_{IsKeyDown(VkShift)}_bridge_{CanInterceptShellContextMenu()}");
+                + $"_shift_{IsKeyDown(VkShift)}_bridge_{_bridgeSession?.State?.Availability}");
         }
 
         if (message == WmRButtonDown)
@@ -883,7 +884,7 @@ public partial class MainWindow : Window
             var invocation = IsKeyDown(VkShift)
                 ? YaziShellInvocation.CurrentDirectory
                 : YaziShellInvocation.SelectedOrHovered;
-            _rightClickInvocation = CanInterceptShellContextMenu() ? invocation : null;
+            _rightClickInvocation = CanInterceptShellContextMenu(invocation) ? invocation : null;
             return _rightClickInvocation is not null;
         }
 
@@ -892,7 +893,8 @@ public partial class MainWindow : Window
             var invocation = _rightClickInvocation ?? (IsKeyDown(VkShift)
                 ? YaziShellInvocation.CurrentDirectory
                 : YaziShellInvocation.SelectedOrHovered);
-            var suppressNormalInput = _rightClickInvocation is not null;
+            var suppressNormalInput = _rightClickInvocation is not null
+                && CanInterceptShellContextMenu(invocation);
             _rightClickInvocation = null;
             var screenPoint = DecodeClientPoint(hwnd, lParam);
             return TryQueueShellContextMenu(
@@ -1361,6 +1363,12 @@ public partial class MainWindow : Window
 
     private void SaveSettings()
     {
+        if (!CanSaveSettings(_settingsLoadFailed))
+        {
+            AppLogger.Log("settings_save_skipped_load_failed");
+            return;
+        }
+
         var settingsPath = HostSettingsStore.GetPath();
         var settingsLoad = HostSettingsStore.LoadWithStatus(settingsPath);
         if (settingsLoad.Status == HostSettingsLoadStatus.Failed)
@@ -1370,8 +1378,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        _settingsLoadFailed = false;
-
         HostSettingsStore.Save(new HostSettings(
             _themeMode,
             _fontFamily,
@@ -1379,6 +1385,11 @@ public partial class MainWindow : Window
             _darkThemeColors,
             _lightThemeColors,
             _windowPlacementSettings));
+    }
+
+    internal static bool CanSaveSettings(bool settingsLoadFailed)
+    {
+        return !settingsLoadFailed;
     }
 
     private void DisposeBridgeEnvironment()

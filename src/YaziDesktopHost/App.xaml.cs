@@ -10,7 +10,7 @@ public partial class App : Application
 {
     private int _unhandledExceptionReported;
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnAppDomainUnhandledException;
@@ -37,19 +37,21 @@ public partial class App : Application
         if (options.UseLastInstance)
         {
             var registry = new LastInstanceRegistry();
-            if (registry.TryRead(out var endpoint)
-                && endpoint is not null
-                && LastInstanceClient.TrySend(
+            if (registry.TryRead(out var endpoint) && endpoint is not null)
+            {
+                var sendStatus = await LastInstanceClient.SendAsync(
                     endpoint,
                     new LastInstanceControlRequest(
                         options.FilePath ?? options.InitialDirectory,
                         options.FilePath is null
                             ? LastInstanceControlCommand.ChangeDirectory
                             : LastInstanceControlCommand.OpenFile),
-                    TimeSpan.FromSeconds(6)))
-            {
-                Shutdown();
-                return;
+                    TimeSpan.FromSeconds(6));
+                if (sendStatus != LastInstanceSendStatus.Rejected)
+                {
+                    Shutdown();
+                    return;
+                }
             }
         }
 

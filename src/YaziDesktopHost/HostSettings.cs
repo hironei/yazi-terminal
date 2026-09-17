@@ -162,7 +162,8 @@ internal static class HostSettingsStore
 
         try
         {
-            var directory = Path.GetDirectoryName(path);
+            var writePath = ResolveWritePath(path);
+            var directory = Path.GetDirectoryName(writePath);
             if (string.IsNullOrWhiteSpace(directory))
             {
                 throw new ArgumentException("Settings path must include a directory.", nameof(path));
@@ -175,11 +176,11 @@ internal static class HostSettingsStore
                 settings.FontSize,
                 SerializeThemeColors(settings.DarkColors, settings.LightColors),
                 SerializeWindowPlacement(settings.WindowPlacement));
-            var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+            var temporaryPath = $"{writePath}.{Guid.NewGuid():N}.tmp";
             try
             {
                 File.WriteAllText(temporaryPath, JsonSerializer.Serialize(persisted, SerializerOptions));
-                File.Move(temporaryPath, path, overwrite: true);
+                File.Move(temporaryPath, writePath, overwrite: true);
             }
             finally
             {
@@ -203,6 +204,32 @@ internal static class HostSettingsStore
         {
             AppLogger.Log("settings_save_failed", exception);
         }
+    }
+
+    internal static string ResolveWritePath(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        var current = Path.GetFullPath(path);
+        for (var depth = 0; depth < 40; depth++)
+        {
+            var fileInfo = new FileInfo(current);
+            var linkTarget = fileInfo.LinkTarget;
+            if (linkTarget is null)
+            {
+                return current;
+            }
+
+            var resolved = fileInfo.ResolveLinkTarget(returnFinalTarget: false);
+            if (resolved is null)
+            {
+                throw new IOException("The settings file link target could not be resolved.");
+            }
+
+            current = resolved.FullName;
+        }
+
+        throw new IOException("The settings file contains too many link levels.");
     }
 
     internal static string GetPath()

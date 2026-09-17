@@ -55,7 +55,8 @@ public sealed record YaziBridgeState(
     YaziBridgePath? Hovered,
     IReadOnlyList<YaziBridgePath> Selected,
     YaziBridgeAvailability Availability,
-    DateTimeOffset LastUpdated);
+    DateTimeOffset LastUpdated,
+    long LastUpdatedTimestamp = 0);
 
 public sealed class YaziBridgeProtocolException : Exception
 {
@@ -583,6 +584,13 @@ public sealed class YaziBridgeStateReducer
         }
 
         var payload = message.Payload;
+        if (payload.TryGetProperty("heartbeat", out var heartbeat)
+            && heartbeat.ValueKind == JsonValueKind.True)
+        {
+            ApplyHeartbeat(message);
+            return;
+        }
+
         var present = RequiredStringArray(payload, "present");
         if (present.Count == 0)
         {
@@ -625,7 +633,31 @@ public sealed class YaziBridgeStateReducer
             hovered,
             selected,
             YaziBridgeAvailability.Available,
-            _timeProvider.GetUtcNow());
+            _timeProvider.GetUtcNow(),
+            _timeProvider.GetTimestamp());
+        UnavailableReason = null;
+    }
+
+    private void ApplyHeartbeat(YaziBridgeEnvelope message)
+    {
+        if (_state is null || _state.Availability != YaziBridgeAvailability.Available)
+        {
+            RejectConnection("snapshot-required");
+            return;
+        }
+
+        var revision = RequiredUInt64(message.Payload, "revision");
+        if (revision != _state.Sequence)
+        {
+            RejectConnection("heartbeat-revision-mismatch");
+            return;
+        }
+
+        _state = _state with
+        {
+            LastUpdated = _timeProvider.GetUtcNow(),
+            LastUpdatedTimestamp = _timeProvider.GetTimestamp(),
+        };
         UnavailableReason = null;
     }
 
@@ -640,7 +672,8 @@ public sealed class YaziBridgeStateReducer
             ParseNullablePath(RequiredProperty(payload, "hovered"), "hovered"),
             ParsePathArray(RequiredProperty(payload, "selected"), "selected"),
             YaziBridgeAvailability.Available,
-            _timeProvider.GetUtcNow());
+            _timeProvider.GetUtcNow(),
+            _timeProvider.GetTimestamp());
     }
 
     private void MarkUnavailable(string reason)
@@ -725,6 +758,17 @@ public sealed class YaziBridgeStateReducer
         if (!value.TryGetInt32(out var number) || number < 0)
         {
             throw new YaziBridgeProtocolException($"Bridge field '{name}' must be a non-negative integer.");
+        }
+
+        return number;
+    }
+
+    private static ulong RequiredUInt64(JsonElement parent, string name)
+    {
+        var value = RequiredProperty(parent, name);
+        if (!value.TryGetUInt64(out var number))
+        {
+            throw new YaziBridgeProtocolException($"Bridge field '{name}' must be an unsigned integer.");
         }
 
         return number;

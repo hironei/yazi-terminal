@@ -27,6 +27,7 @@ var tests = new (string Name, Action Test)[]
     ("last-instance control pipe accepts a directory request", LastInstanceControlPipeAcceptsDirectoryRequest),
     ("last-instance control pipe accepts a file request", LastInstanceControlPipeAcceptsFileRequest),
     ("last-instance control pipe returns a negative ACK", LastInstanceControlPipeReturnsNegativeAcknowledgement),
+    ("last-instance control server recovers after a malformed request", LastInstanceControlServerRecoversAfterMalformedRequest),
     ("path requests serialize startup file open and last-instance ACK", PathRequestsSerializeStartupFileOpenAndLastInstanceAcknowledgement),
     ("path request batches remain contiguous", PathRequestBatchesRemainContiguous),
     ("bridge parser accepts a CJK snapshot", BridgeParserAcceptsCjkSnapshot),
@@ -40,6 +41,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge reducer rejects a decreasing snapshot", BridgeReducerRejectsDecreasingSnapshot),
     ("bridge reducer rejects a snapshot before hello", BridgeReducerRejectsSnapshotBeforeHello),
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
+    ("bridge heartbeat refreshes matching state and rejects mismatches", BridgeHeartbeatRefreshesMatchingStateAndRejectsMismatches),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("bridge session publishes command catalog", BridgeSessionPublishesCommandCatalog),
@@ -63,6 +65,8 @@ var tests = new (string Name, Action Test)[]
     ("bridge environment scope restores values", BridgeEnvironmentScopeRestoresValues),
     ("host settings accept custom font families and sizes", HostSettingsAcceptCustomFontFamiliesAndSizes),
     ("settings load distinguishes missing and failed files", SettingsLoadDistinguishesMissingAndFailedFiles),
+    ("settings save remains guarded after a failed load", SettingsSaveRemainsGuardedAfterFailedLoad),
+    ("settings save follows a file symlink", SettingsSaveFollowsFileSymlink),
     ("host settings round trip and reject blank or invalid values", HostSettingsRoundTripAndRejectsBlankOrInvalidValues),
     ("window placement settings round trip and ignore malformed placement", WindowPlacementSettingsRoundTripAndIgnoreMalformedPlacement),
     ("window placement catalog keeps per-monitor placements", WindowPlacementCatalogKeepsPerMonitorPlacements),
@@ -81,6 +85,7 @@ var tests = new (string Name, Action Test)[]
     ("shell target resolves current directory", ShellTargetResolvesCurrentDirectory),
     ("shell target rejects unavailable, URLs, and empty state", ShellTargetRejectsUnavailableUrlsAndEmptyState),
     ("shell target rejects stale bridge state", ShellTargetRejectsStaleBridgeState),
+    ("shell target uses monotonic freshness", ShellTargetUsesMonotonicFreshness),
     ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
     ("shell context IContextMenu3 forwards LRESULT", ShellContextMenu3ForwardsLresult),
     ("shell context IContextMenu3 failure remains unhandled", ShellContextMenu3FailureRemainsUnhandled),
@@ -103,6 +108,7 @@ var tests = new (string Name, Action Test)[]
     ("terminal paste ignores empty text", TerminalPasteIgnoresEmptyText),
     ("terminal paste frames Unicode and multiline text", TerminalPasteFramesUnicodeAndMultilineText),
     ("app logger rotates an oversized file", AppLoggerRotatesOversizedFile),
+    ("app logger serializes concurrent appends", AppLoggerSerializesConcurrentAppends),
     ("Kitty protocol filter drops a flags push", KittyProtocolFilterDropsFlagsPush),
     ("Kitty protocol filter leaves queries and pops untouched", KittyProtocolFilterLeavesQueriesAndPopsUntouched),
     ("Kitty protocol filter leaves unrelated escape sequences untouched", KittyProtocolFilterLeavesUnrelatedEscapeSequencesUntouched),
@@ -290,6 +296,7 @@ static void LastInstanceRegistryPublishesAndRemovesCurrentEndpoint()
         registry.Publish(currentPipe);
 
         Assert(registry.TryRead(out var endpoint));
+        Assert(endpoint!.ProcessId == Environment.ProcessId);
         Assert(endpoint!.PipeName == currentPipe);
 
         Assert(registry.Publish(newPipe));
@@ -412,13 +419,19 @@ static void LastInstanceClientTimesOutWhileWaitingForAcknowledgement()
         PipeTransmissionMode.Byte,
         PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
     var acceptTask = server.WaitForConnectionAsync();
-    var resultTask = Task.Run(() => LastInstanceClient.TrySend(
+    var resultTask = Task.Run(() => LastInstanceClient.SendAsync(
         new LastInstanceEndpoint(pipeName),
         @"C:\work",
         TimeSpan.FromMilliseconds(200)));
 
     Assert(acceptTask.Wait(TimeSpan.FromSeconds(2)));
-    Assert(!resultTask.GetAwaiter().GetResult());
+    var requestReadTask = LastInstanceFrame.ReadAsync(
+        server,
+        LastInstanceControlProtocol.MaxFrameBytes,
+        CancellationToken.None);
+    var status = resultTask.GetAwaiter().GetResult();
+    Assert(requestReadTask.GetAwaiter().GetResult() is not null);
+    Assert(status == LastInstanceSendStatus.Unknown);
 }
 
 static void LastInstanceClientRejectsInvalidAcknowledgementFrame()
@@ -546,6 +559,55 @@ static void LastInstanceControlPipeReturnsNegativeAcknowledgement()
 
         Assert(registry.TryRead(out var endpoint));
         Assert(!LastInstanceClient.TrySend(endpoint!, @"C:\work", TimeSpan.FromSeconds(2)));
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
+    }
+}
+
+static void LastInstanceControlServerRecoversAfterMalformedRequest()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-last-instance-recovery-");
+    try
+    {
+        var registry = new LastInstanceRegistry(
+            Path.Combine(directory.FullName, "last.json"),
+            $@"Local\yazi-test-{Guid.NewGuid():N}");
+        using var server = new LastInstanceControlServer(registry);
+        var received = new ManualResetEventSlim();
+        server.RequestReceived += (_, _) =>
+        {
+            received.Set();
+            return Task.FromResult(true);
+        };
+        Assert(server.Start());
+        Assert(registry.TryRead(out var endpoint));
+
+        using (var malformed = new NamedPipeClientStream(
+                   ".",
+                   endpoint!.PipeName,
+                   PipeDirection.InOut,
+                   PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly))
+        {
+            malformed.Connect(2000);
+            LastInstanceFrame.WriteAsync(
+                    malformed,
+                    "not-json",
+                    LastInstanceControlProtocol.MaxFrameBytes,
+                    CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Assert(LastInstanceFrame.ReadAsync(
+                    malformed,
+                    LastInstanceControlProtocol.MaxFrameBytes,
+                    CancellationToken.None)
+                .GetAwaiter()
+                .GetResult() is not null);
+        }
+
+        Assert(LastInstanceClient.TrySend(endpoint, @"C:\work", TimeSpan.FromSeconds(2)));
+        Assert(received.Wait(TimeSpan.FromSeconds(2)));
     }
     finally
     {
@@ -813,6 +875,31 @@ static void BridgeReducerRequiresFreshSnapshot()
     reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
     Assert(reducer.State is not null);
     Assert(reducer.State!.Sequence == 1);
+}
+
+static void BridgeHeartbeatRefreshesMatchingStateAndRejectsMismatches()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
+    var before = reducer.State;
+
+    reducer.Apply(parser.Parse(
+        Frame(instanceId, 2, "state", new { present = new[] { "tab" }, tab = 0, heartbeat = true, revision = 1UL }),
+        instanceId));
+
+    Assert(!reducer.ConnectionRejected);
+    Assert(reducer.State?.Sequence == 1);
+    Assert(reducer.State?.LastUpdatedTimestamp != 0);
+    Assert(reducer.State?.LastUpdatedTimestamp != before?.LastUpdatedTimestamp);
+
+    reducer.Apply(parser.Parse(
+        Frame(instanceId, 3, "state", new { present = new[] { "tab" }, tab = 0, heartbeat = true, revision = 99UL }),
+        instanceId));
+    Assert(reducer.ConnectionRejected);
+    Assert(reducer.UnavailableReason == "heartbeat-revision-mismatch");
 }
 
 static void BridgePipeRoundTripsFrame()
@@ -1413,11 +1500,12 @@ static void YaziFileOpenerPreservesSpacePathAsSingleArgument()
     var openStartInfo = YaziCommandController.CreateStartInfo(
         @"C:\tools\ya.exe",
         "12345",
-        "open");
+        "open --hovered");
     Assert(openStartInfo.ArgumentList.SequenceEqual([
         "emit-to",
         "12345",
-        "open"]));
+        "open",
+        "--hovered"]));
 }
 
 static void YaziActionTokenizerHandlesQuotedArguments()
@@ -1656,6 +1744,34 @@ static void ShellTargetRejectsStaleBridgeState()
     Assert(result.Reason == "bridge-stale");
 }
 
+static void ShellTargetUsesMonotonicFreshness()
+{
+    var timeProvider = new TestTimeProvider(100, DateTimeOffset.UtcNow);
+    var state = AvailableState(
+        hovered: new YaziBridgePath(YaziBridgePathKind.Filesystem, @"C:\work\hovered.txt"),
+        selected: []) with
+    {
+        LastUpdated = DateTimeOffset.MinValue,
+        LastUpdatedTimestamp = timeProvider.GetTimestamp(),
+    };
+
+    var current = YaziShellTargetResolver.Resolve(
+        state,
+        YaziShellInvocation.SelectedOrHovered,
+        timeProvider,
+        TimeSpan.FromSeconds(1));
+    Assert(current.Status == YaziShellTargetStatus.Available);
+
+    timeProvider.Timestamp += 20_000_000;
+    var stale = YaziShellTargetResolver.Resolve(
+        state,
+        YaziShellInvocation.SelectedOrHovered,
+        timeProvider,
+        TimeSpan.FromSeconds(1));
+    Assert(stale.Status == YaziShellTargetStatus.Unavailable);
+    Assert(stale.Reason == "bridge-stale");
+}
+
 static void ShellContextComInterfacesPreserveNativeVtableOrder()
 {
     var serviceType = typeof(WindowsShellContextMenuService);
@@ -1883,6 +1999,31 @@ static void AppLoggerRotatesOversizedFile()
     }
 }
 
+static void AppLoggerSerializesConcurrentAppends()
+{
+    var path = Path.Combine(Path.GetTempPath(), $"yazi-app-log-concurrent-{Guid.NewGuid():N}.log");
+    try
+    {
+        var tasks = Enumerable.Range(0, 8)
+            .Select(worker => Task.Run(() =>
+            {
+                for (var index = 0; index < 20; index++)
+                {
+                    AppLogger.AppendLine(path, $"{worker}:{index}{Environment.NewLine}", 1024 * 1024);
+                }
+            }))
+            .ToArray();
+        Task.WhenAll(tasks).GetAwaiter().GetResult();
+
+        Assert(File.ReadLines(path).Count() == 160);
+    }
+    finally
+    {
+        File.Delete(path);
+        File.Delete(path + ".1");
+    }
+}
+
 static void KittyProtocolFilterDropsFlagsPush()
 {
     var filter = new KittyKeyboardProtocolFilter();
@@ -2061,6 +2202,47 @@ static void SettingsLoadDistinguishesMissingAndFailedFiles()
     finally
     {
         File.Delete(path);
+    }
+}
+
+static void SettingsSaveRemainsGuardedAfterFailedLoad()
+{
+    Assert(!MainWindow.CanSaveSettings(settingsLoadFailed: true));
+    Assert(MainWindow.CanSaveSettings(settingsLoadFailed: false));
+}
+
+static void SettingsSaveFollowsFileSymlink()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-settings-link-");
+    var targetPath = Path.Combine(directory.FullName, "target.json");
+    var linkPath = Path.Combine(directory.FullName, "settings.json");
+    try
+    {
+        HostSettingsStore.Save(HostSettings.Defaults, targetPath);
+        try
+        {
+            File.CreateSymbolicLink(linkPath, targetPath);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return;
+        }
+        catch (IOException)
+        {
+            return;
+        }
+
+        HostSettingsStore.Save(
+            new HostSettings(AppThemeMode.Light, "MS Gothic", 18),
+            linkPath);
+
+        Assert(File.Exists(linkPath));
+        Assert(new FileInfo(linkPath).LinkTarget is not null);
+        Assert(HostSettingsStore.Load(targetPath).ThemeMode == AppThemeMode.Light);
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
     }
 }
 
@@ -2526,4 +2708,13 @@ sealed class DelayedPathTransactionController : IYaziPathTransactionController
             _operations.Add(operation);
         }
     }
+}
+
+sealed class TestTimeProvider(long timestamp, DateTimeOffset utcNow) : TimeProvider
+{
+    public long Timestamp { get; set; } = timestamp;
+
+    public override long GetTimestamp() => Timestamp;
+
+    public override DateTimeOffset GetUtcNow() => utcNow;
 }

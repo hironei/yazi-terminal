@@ -42,8 +42,36 @@ public static class YaziShellTargetResolver
         return Resolve(
             state,
             invocation,
-            DateTimeOffset.UtcNow,
+            TimeProvider.System,
             DefaultMaxStateAge);
+    }
+
+    internal static YaziShellTargetResolution Resolve(
+        YaziBridgeState? state,
+        YaziShellInvocation invocation,
+        TimeProvider timeProvider,
+        TimeSpan maxStateAge)
+    {
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        if (state is null || state.Availability != YaziBridgeAvailability.Available)
+        {
+            return YaziShellTargetResolution.Rejected(
+                YaziShellTargetStatus.Unavailable,
+                "bridge-unavailable");
+        }
+
+        var isStale = state.LastUpdatedTimestamp != 0
+            ? timeProvider.GetElapsedTime(state.LastUpdatedTimestamp) > maxStateAge
+                || timeProvider.GetElapsedTime(state.LastUpdatedTimestamp) < TimeSpan.Zero
+            : timeProvider.GetUtcNow() - state.LastUpdated > maxStateAge;
+        if (isStale)
+        {
+            return YaziShellTargetResolution.Rejected(
+                YaziShellTargetStatus.Unavailable,
+                "bridge-stale");
+        }
+
+        return ResolveAvailableTarget(state, invocation);
     }
 
     internal static YaziShellTargetResolution Resolve(
@@ -66,6 +94,13 @@ public static class YaziShellTargetResolver
                 "bridge-stale");
         }
 
+        return ResolveAvailableTarget(state, invocation);
+    }
+
+    private static YaziShellTargetResolution ResolveAvailableTarget(
+        YaziBridgeState state,
+        YaziShellInvocation invocation)
+    {
         IReadOnlyList<YaziBridgePath> paths = invocation switch
         {
             YaziShellInvocation.CurrentDirectory => [state.Cwd],

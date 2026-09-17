@@ -148,8 +148,11 @@ YaziTerminal.exe --last-instance C:\work\project\README.md
 The existing window is brought to the foreground and its active Yazi tab is
 asked to change to the directory. For a file target, the existing window
 reveals and opens the file using Yazi's configured opener/editor. If no usable
-last instance exists, the command starts a new window instead. The option is
-current-user-only and does not reuse a Git Bash or other terminal pane.
+last instance explicitly rejects the request, the command starts a new window
+instead. If the request was written but its acknowledgement was lost, the
+launcher does not start a second window because the existing instance may
+still be processing it. The option is current-user-only and does not reuse a
+Git Bash or other terminal pane.
 
 From Git Bash, quote the executable and directory when either path contains
 spaces:
@@ -208,7 +211,10 @@ colors in ANSI order (black, red, green, yellow, blue, magenta, cyan, white,
 then their bright variants).
 
 The host also saves the window's display, position, size, and normal/maximized
-state in the same settings file when the window closes. The next launch restores
+state in the same settings file when the window closes. If an existing settings
+file cannot be read, the host preserves it and skips the close-time save until a
+valid reload succeeds. A settings-file symbolic link is followed to its target
+when saving. The next launch restores
 the last-used display when it is connected. Positions observed on other
 displays are retained independently, so moving the window between displays
 preserves each display's last placement. If a display is disconnected or its

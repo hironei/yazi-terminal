@@ -24,7 +24,7 @@ public static class YaziFileController
         return await YaziCommandController.ExecuteAsync(
                 yaExecutable,
                 clientId,
-                "open",
+                "open --hovered",
                 cancellationToken)
             .ConfigureAwait(false);
     }
