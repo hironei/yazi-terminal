@@ -583,7 +583,8 @@ negotiation.
 
 The host may write category-level failure diagnostics to
 `%LOCALAPPDATA%\YaziTerminal\app.log`. Shell context-menu item names are not
-read or written to that log.
+read or written to that log. The active log is rotated at approximately 1 MiB;
+the previous generation is retained as app.log.1.
 
 For the opt-in terminal color fixture, set the following environment variable
 before starting the host:
@@ -602,6 +603,13 @@ The fixture is for manual validation and is not part of normal Yazi display.
   Explorer drag is already in progress is not supported in v1; the OLE drag
   loop does not deliver those keys to Yazi.
 - Packaged native HWND/WPF overlay behavior remains a separate manual gate.
+- Shell context-menu and drag targets come from the most recent bridge snapshot.
+  Snapshots older than one second are rejected. Very rapid hover changes can
+  still occur between two bridge polls, so verify the target before destructive
+  Shell actions.
+- The host's left-button drag hook shares the terminal HWND with Yazi mouse
+  reporting. Explorer/Desktop drag is validated, but text-selection gestures
+  inside terminal output are not a separate supported interaction mode.
 - The exact supported Yazi/`ya` version policy is not yet a compatibility range;
   use the pinned fixture until that policy is defined.
 - The bridge plugin is an opt-in compatibility probe and is not a general

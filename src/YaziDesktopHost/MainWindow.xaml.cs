@@ -46,6 +46,7 @@ public partial class MainWindow : Window
     private YaziPathRequestSequencer? _pathRequestSequencer;
     private FileSystemWatcher? _settingsWatcher;
     private DispatcherTimer? _settingsReloadTimer;
+    private bool _settingsLoadFailed;
 
     private const int WmContextMenu = 0x007B;
     private const int WmRButtonDown = 0x0204;
@@ -73,7 +74,9 @@ public partial class MainWindow : Window
         _fileToOpen = fileToOpen is null ? null : Path.GetFullPath(fileToOpen);
         _lastInstanceServer = new LastInstanceControlServer();
         _lastInstanceServer.RequestReceived += LastInstanceServer_RequestReceivedAsync;
-        var settings = HostSettingsStore.Load();
+        var settingsLoad = HostSettingsStore.LoadWithStatus(HostSettingsStore.GetPath());
+        var settings = settingsLoad.Settings;
+        _settingsLoadFailed = settingsLoad.Status == HostSettingsLoadStatus.Failed;
         _themeMode = settings.ThemeMode;
         _fontFamily = settings.FontFamily;
         _fontSize = settings.FontSize;
@@ -178,17 +181,7 @@ public partial class MainWindow : Window
 
         if (command.Id == PaletteCommandId.EditSettings)
         {
-            SaveSettings();
-            if (_yaExecutable is null || _yaziClientId is null)
-            {
-                AppLogger.Log("yazi_command_unavailable");
-                return;
-            }
-
-            _ = ExecutePathRequestAsync(
-                new YaziPathRequest(YaziPathRequestKind.OpenFile, HostSettingsStore.GetPath()),
-                CancellationToken.None,
-                "yazi_settings_edit");
+            _ = EditSettingsAsync();
             return;
         }
 
@@ -201,6 +194,47 @@ public partial class MainWindow : Window
         }
 
         _ = ExecuteYaziCommandAsync(yaziCommand.ActionSequence, _yaExecutable, _yaziClientId);
+    }
+
+    private async Task EditSettingsAsync()
+    {
+        SaveSettings();
+        var pathRequestSequencer = _pathRequestSequencer;
+        if (_yaExecutable is null || _yaziClientId is null || pathRequestSequencer is null)
+        {
+            AppLogger.Log("yazi_command_unavailable");
+            return;
+        }
+
+        try
+        {
+            var succeeded = await pathRequestSequencer.ExecuteBatchAsync(
+                    () =>
+                    {
+                        var requests = new List<YaziPathRequest>
+                        {
+                            new(YaziPathRequestKind.OpenFile, HostSettingsStore.GetPath()),
+                        };
+                        if (_bridgeSession?.State is { Cwd.Kind: YaziBridgePathKind.Filesystem } state)
+                        {
+                            requests.Add(new YaziPathRequest(
+                                YaziPathRequestKind.ChangeDirectory,
+                                state.Cwd.Value));
+                        }
+
+                        return requests;
+                    },
+                    CancellationToken.None)
+                .ConfigureAwait(true);
+            if (!succeeded && !_isClosing)
+            {
+                AppLogger.Log("yazi_settings_edit_failed");
+            }
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or Win32Exception)
+        {
+            AppLogger.Log("yazi_settings_edit_failed", exception);
+        }
     }
 
     private static async Task ExecuteYaziCommandAsync(
@@ -299,6 +333,7 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            DisposeBridgeEnvironment();
             AppLogger.Log("yazi_start_failed", exception);
             ShowStartupError("Yazi could not be started. See the application log for details.");
         }
@@ -449,11 +484,26 @@ public partial class MainWindow : Window
     private void ReloadSettingsFromDisk()
     {
         _settingsReloadTimer?.Stop();
-        if (_isClosing || !HostSettingsStore.TryLoad(HostSettingsStore.GetPath(), out var settings))
+        var settingsLoad = HostSettingsStore.LoadWithStatus(HostSettingsStore.GetPath());
+        if (_isClosing)
         {
             return;
         }
 
+        if (settingsLoad.Status == HostSettingsLoadStatus.Failed)
+        {
+            _settingsLoadFailed = true;
+            return;
+        }
+
+        if (settingsLoad.Status == HostSettingsLoadStatus.Missing)
+        {
+            _settingsLoadFailed = false;
+            return;
+        }
+
+        _settingsLoadFailed = false;
+        var settings = settingsLoad.Settings;
         _themeMode = settings.ThemeMode;
         _fontFamily = settings.FontFamily;
         _fontSize = settings.FontSize;
@@ -988,6 +1038,7 @@ public partial class MainWindow : Window
     private void Term_TermReady(object? sender, EventArgs e)
     {
         _yaziReady = true;
+        DisposeBridgeEnvironment();
 
         if (_processMonitorTask is not null || sender is not TermPTY term)
         {
@@ -996,21 +1047,22 @@ public partial class MainWindow : Window
 
         AppLogger.Log("yazi_process_monitor_starting");
         _processMonitorCancellation = new CancellationTokenSource();
-        _processMonitorTask = MonitorProcessExitAsync(term, _processMonitorCancellation.Token);
+        var processCancellationToken = _processMonitorCancellation.Token;
+        _processMonitorTask = MonitorProcessExitAsync(term, processCancellationToken);
 
         if (TerminalColorFixture.IsEnabled)
         {
-            _ = ShowTerminalColorFixtureAsync(term, _processMonitorCancellation.Token);
+            _ = ShowTerminalColorFixtureAsync(term, processCancellationToken);
         }
 
         if (_fileToOpen is { } fileToOpen)
         {
             _ = Dispatcher.BeginInvoke(
                 DispatcherPriority.Input,
-                new Action(() => _ = ExecutePathRequestAsync(
-                    new YaziPathRequest(YaziPathRequestKind.OpenFile, fileToOpen),
-                    _processMonitorCancellation.Token,
-                    "startup_file_open")));
+                    new Action(() => _ = ExecutePathRequestAsync(
+                        new YaziPathRequest(YaziPathRequestKind.OpenFile, fileToOpen),
+                        processCancellationToken,
+                        "startup_file_open")));
         }
     }
 
@@ -1309,6 +1361,17 @@ public partial class MainWindow : Window
 
     private void SaveSettings()
     {
+        var settingsPath = HostSettingsStore.GetPath();
+        var settingsLoad = HostSettingsStore.LoadWithStatus(settingsPath);
+        if (settingsLoad.Status == HostSettingsLoadStatus.Failed)
+        {
+            _settingsLoadFailed = true;
+            AppLogger.Log("settings_save_skipped_load_failed");
+            return;
+        }
+
+        _settingsLoadFailed = false;
+
         HostSettingsStore.Save(new HostSettings(
             _themeMode,
             _fontFamily,
@@ -1316,6 +1379,12 @@ public partial class MainWindow : Window
             _darkThemeColors,
             _lightThemeColors,
             _windowPlacementSettings));
+    }
+
+    private void DisposeBridgeEnvironment()
+    {
+        _bridgeEnvironment?.Dispose();
+        _bridgeEnvironment = null;
     }
 
     private ThemeColors GetThemeColors(AppThemeMode mode)

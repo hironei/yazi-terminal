@@ -49,6 +49,17 @@ internal static class HostSettingsCatalog
     }
 }
 
+internal enum HostSettingsLoadStatus
+{
+    Missing,
+    Loaded,
+    Failed,
+}
+
+internal sealed record HostSettingsLoadResult(
+    HostSettings Settings,
+    HostSettingsLoadStatus Status);
+
 internal static class HostSettingsStore
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
@@ -60,34 +71,34 @@ internal static class HostSettingsStore
 
     public static HostSettings Load()
     {
-        return TryLoad(GetPath(), out var settings)
-            ? settings
-            : HostSettings.Defaults;
+        return LoadWithStatus(GetPath()).Settings;
     }
 
     internal static HostSettings Load(string path)
     {
-        return TryLoad(path, out var settings)
-            ? settings
-            : HostSettings.Defaults;
+        return LoadWithStatus(path).Settings;
     }
 
     internal static bool TryLoad(string path, out HostSettings settings)
     {
-        settings = HostSettings.Defaults;
+        var result = LoadWithStatus(path);
+        settings = result.Settings;
+        return result.Status == HostSettingsLoadStatus.Loaded;
+    }
+
+    internal static HostSettingsLoadResult LoadWithStatus(string path)
+    {
         try
         {
-            if (!File.Exists(path))
-            {
-                return false;
-            }
-
-            var persisted = JsonSerializer.Deserialize<PersistedHostSettings>(
-                File.ReadAllText(path),
-                SerializerOptions);
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            var persisted = JsonSerializer.Deserialize<PersistedHostSettings>(stream, SerializerOptions);
             if (persisted is null)
             {
-                return false;
+                return new(HostSettings.Defaults, HostSettingsLoadStatus.Failed);
             }
 
             var themeMode = string.Equals(persisted.Theme, "Light", StringComparison.OrdinalIgnoreCase)
@@ -112,14 +123,22 @@ internal static class HostSettingsStore
                 AppLogger.Log("settings_font_size_fallback");
             }
 
-            settings = new HostSettings(
+            var settings = new HostSettings(
                 themeMode,
                 fontFamily,
                 fontSize,
                 ParseOverrides(persisted.ThemeColors?.Dark),
                 ParseOverrides(persisted.ThemeColors?.Light),
                 ParseWindowPlacement(persisted.WindowPlacement));
-            return true;
+            return new(settings, HostSettingsLoadStatus.Loaded);
+        }
+        catch (FileNotFoundException)
+        {
+            return new(HostSettings.Defaults, HostSettingsLoadStatus.Missing);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return new(HostSettings.Defaults, HostSettingsLoadStatus.Missing);
         }
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException
@@ -128,7 +147,7 @@ internal static class HostSettingsStore
             or NotSupportedException)
         {
             AppLogger.Log("settings_load_failed", exception);
-            return false;
+            return new(HostSettings.Defaults, HostSettingsLoadStatus.Failed);
         }
     }
 
@@ -156,7 +175,26 @@ internal static class HostSettingsStore
                 settings.FontSize,
                 SerializeThemeColors(settings.DarkColors, settings.LightColors),
                 SerializeWindowPlacement(settings.WindowPlacement));
-            File.WriteAllText(path, JsonSerializer.Serialize(persisted, SerializerOptions));
+            var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
+            try
+            {
+                File.WriteAllText(temporaryPath, JsonSerializer.Serialize(persisted, SerializerOptions));
+                File.Move(temporaryPath, path, overwrite: true);
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(temporaryPath))
+                    {
+                        File.Delete(temporaryPath);
+                    }
+                }
+                catch
+                {
+                    // The original settings file is already safe if cleanup fails.
+                }
+            }
         }
         catch (Exception exception) when (exception is IOException
             or UnauthorizedAccessException

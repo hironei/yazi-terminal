@@ -242,6 +242,7 @@ local function json_commands(commands)
 	for _, command in ipairs(commands) do
 		local run = command.run or ""
 		local runs = command.runs or {}
+		local description = command.description or ""
 		local valid_runs = #runs > 0 and #runs <= 32
 		for _, action in ipairs(runs) do
 			if action == "" or #action > 4096 then
@@ -249,7 +250,7 @@ local function json_commands(commands)
 				break
 			end
 		end
-		if #run <= 4096 and valid_runs then
+		if #run <= 4096 and #description <= 4096 and valid_runs then
 			local run_items = {}
 			for _, action in ipairs(runs) do
 				table.insert(run_items, json_string(action))
@@ -257,7 +258,7 @@ local function json_commands(commands)
 			local item = "{\"key\":" .. json_string(command.key or "")
 				.. ",\"run\":" .. json_string(run)
 				.. ",\"runs\":[" .. table.concat(run_items, ",") .. "]"
-				.. ",\"description\":" .. json_string(command.description or "") .. "}"
+				.. ",\"description\":" .. json_string(description) .. "}"
 			local separator = #encoded == 0 and 0 or 1
 			if size + separator + #item > 60000 or #encoded >= 256 then
 				break
@@ -356,18 +357,16 @@ local function setup(state, opts)
 					while true do
 						local snapshot = get_state()
 						local encoded_snapshot = json_snapshot(path_kind, snapshot)
-						if encoded_snapshot ~= last_snapshot then
-							sequence = sequence + 1
-							local kind = last_snapshot and "state" or "snapshot"
-							local payload = kind == "snapshot"
-								and encoded_snapshot
-								or json_state_update(path_kind, snapshot)
-							if not send(fd, sequence, kind, payload) then
-								connected = false
-								break
-							end
-							last_snapshot = encoded_snapshot
+						sequence = sequence + 1
+						local kind = last_snapshot and "state" or "snapshot"
+						local payload = kind == "snapshot"
+							and encoded_snapshot
+							or json_state_update(path_kind, snapshot)
+						if not send(fd, sequence, kind, payload) then
+							connected = false
+							break
 						end
+						last_snapshot = encoded_snapshot
 						ya.sleep(interval)
 					end
 				end

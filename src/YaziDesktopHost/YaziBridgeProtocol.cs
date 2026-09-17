@@ -54,7 +54,8 @@ public sealed record YaziBridgeState(
     YaziBridgePath Cwd,
     YaziBridgePath? Hovered,
     IReadOnlyList<YaziBridgePath> Selected,
-    YaziBridgeAvailability Availability);
+    YaziBridgeAvailability Availability,
+    DateTimeOffset LastUpdated);
 
 public sealed class YaziBridgeProtocolException : Exception
 {
@@ -194,6 +195,22 @@ public sealed class YaziBridgeCommandCatalogParser
         var result = new List<YaziBridgeCommand>(commands.GetArrayLength());
         foreach (var command in commands.EnumerateArray())
         {
+            if (TryParseCommand(command, out var parsed))
+            {
+                result.Add(parsed);
+            }
+        }
+
+        return result;
+    }
+
+    private static bool TryParseCommand(
+        JsonElement command,
+        out YaziBridgeCommand parsed)
+    {
+        parsed = null!;
+        try
+        {
             if (command.ValueKind != JsonValueKind.Object)
             {
                 throw new YaziBridgeProtocolException("Bridge command entry must be an object.");
@@ -208,10 +225,13 @@ public sealed class YaziBridgeCommandCatalogParser
                 throw new YaziBridgeProtocolException("Bridge command description is too long.");
             }
 
-            result.Add(new YaziBridgeCommand(key ?? string.Empty, run, description, runs));
+            parsed = new YaziBridgeCommand(key ?? string.Empty, run, description, runs);
+            return true;
         }
-
-        return result;
+        catch (YaziBridgeProtocolException)
+        {
+            return false;
+        }
     }
 
     private static string? OptionalString(JsonElement parent, string name)
@@ -466,15 +486,17 @@ public sealed class YaziBridgePipeConnection : IYaziBridgeConnection
 public sealed class YaziBridgeStateReducer
 {
     private readonly Guid _instanceId;
+    private readonly TimeProvider _timeProvider;
     private YaziBridgeState? _state;
     private bool _handshakeCompleted;
     private bool _snapshotAccepted;
     private bool _connectionRejected;
     private ulong? _lastSequence;
 
-    public YaziBridgeStateReducer(Guid instanceId)
+    public YaziBridgeStateReducer(Guid instanceId, TimeProvider? timeProvider = null)
     {
         _instanceId = instanceId;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public YaziBridgeState? State => _state;
@@ -482,6 +504,8 @@ public sealed class YaziBridgeStateReducer
     public YaziBridgeAvailability Availability => _state?.Availability ?? YaziBridgeAvailability.Unavailable;
 
     public string? UnavailableReason { get; private set; } = "handshake-required";
+
+    public bool ConnectionRejected => _connectionRejected;
 
     public void Apply(YaziBridgeEnvelope message)
     {
@@ -600,7 +624,8 @@ public sealed class YaziBridgeStateReducer
             cwd,
             hovered,
             selected,
-            YaziBridgeAvailability.Available);
+            YaziBridgeAvailability.Available,
+            _timeProvider.GetUtcNow());
         UnavailableReason = null;
     }
 
@@ -614,7 +639,8 @@ public sealed class YaziBridgeStateReducer
             ParsePath(RequiredProperty(payload, "cwd"), "cwd"),
             ParseNullablePath(RequiredProperty(payload, "hovered"), "hovered"),
             ParsePathArray(RequiredProperty(payload, "selected"), "selected"),
-            YaziBridgeAvailability.Available);
+            YaziBridgeAvailability.Available,
+            _timeProvider.GetUtcNow());
     }
 
     private void MarkUnavailable(string reason)

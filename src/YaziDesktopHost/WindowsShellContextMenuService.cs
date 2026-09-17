@@ -58,7 +58,6 @@ public sealed class WindowsShellContextMenuService
     private const uint CommandFirst = 1;
     private const uint CommandLast = 0x7FFF;
     private const uint CmfExplore = 0x00000004;
-    private const uint CmfCanRename = 0x00000010;
     private const uint TpmRetCmd = 0x0100;
     private const uint TpmRightButton = 0x0002;
     private const int SwShownormal = 1;
@@ -213,7 +212,7 @@ public sealed class WindowsShellContextMenuService
                 0,
                 CommandFirst,
                 CommandLast,
-                CmfExplore | CmfCanRename);
+                CmfExplore);
             ThrowIfFailed(queryResult, "IContextMenu.QueryContextMenu");
             if (source is not null)
             {

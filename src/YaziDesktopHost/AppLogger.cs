@@ -4,6 +4,8 @@ namespace YaziDesktopHost;
 
 internal static class AppLogger
 {
+    internal const long MaxLogBytes = 1 * 1024 * 1024;
+
     private static readonly object SyncRoot = new();
 
     public static void Log(string eventName, Exception? exception = null)
@@ -31,14 +33,28 @@ internal static class AppLogger
                 }
             }
 
-            lock (SyncRoot)
-            {
-                File.AppendAllText(Path.Combine(logDirectory, "app.log"), line + Environment.NewLine);
-            }
+            AppendLine(Path.Combine(logDirectory, "app.log"), line + Environment.NewLine, MaxLogBytes);
         }
         catch
         {
             // Logging must never prevent the GUI from reporting the original error.
+        }
+    }
+
+    internal static void AppendLine(string path, string line, long maxBytes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(line);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxBytes);
+
+        lock (SyncRoot)
+        {
+            if (File.Exists(path) && new FileInfo(path).Length >= maxBytes)
+            {
+                File.Move(path, path + ".1", overwrite: true);
+            }
+
+            File.AppendAllText(path, line);
         }
     }
 }

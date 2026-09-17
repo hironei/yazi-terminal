@@ -524,7 +524,7 @@ public static class LastInstanceClient
 
 public sealed class LastInstanceControlServer : IDisposable
 {
-    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(5);
     private readonly LastInstanceRegistry _registry;
     private readonly CancellationTokenSource _shutdown = new();
     private NamedPipeServerStream? _server;
