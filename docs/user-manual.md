@@ -217,7 +217,8 @@ file cannot be read, the host preserves it and skips the close-time save until a
 valid reload succeeds. A settings-file symbolic link is followed to its target
 when saving, and hard-linked settings files retain their shared file identity.
 If a user-triggered settings save is skipped because the file cannot be read,
-the host shows a warning; close-time saves remain silent. The next launch restores
+the host shows a warning; fix and save the file to apply valid changes
+automatically, and close-time saves remain silent. The next launch restores
 the last-used display when it is connected. Positions observed on other
 displays are retained independently, so moving the window between displays
 preserves each display's last placement. If a display is disconnected or its

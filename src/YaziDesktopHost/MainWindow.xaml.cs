@@ -200,7 +200,7 @@ public partial class MainWindow : Window
 
     private async Task EditSettingsAsync()
     {
-        SaveSettings();
+        SaveSettings(notifyUser: false);
         var pathRequestSequencer = _pathRequestSequencer;
         if (_yaExecutable is null || _yaziClientId is null || pathRequestSequencer is null)
         {
@@ -1192,8 +1192,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        SaveWindowPlacement();
         _isClosing = true;
+        SaveWindowPlacement();
         AppLogger.Log("yazi_normal_exit");
         DisposeSession(processAlreadyExited: true);
         Close();
@@ -1293,8 +1293,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        SaveWindowPlacement();
         _isClosing = true;
+        SaveWindowPlacement();
         AppLogger.Log("yazi_unexpected_exit");
         MessageBox.Show(
             this,
@@ -1377,12 +1377,15 @@ public partial class MainWindow : Window
             ToMediaColor(colors.TerminalBackground));
     }
 
-    private void SaveSettings()
+    private void SaveSettings(bool notifyUser = true)
     {
         if (!CanSaveSettings(_settingsLoadFailed))
         {
             AppLogger.Log("settings_save_skipped_load_failed");
-            NotifySettingsSaveSkipped();
+            if (notifyUser)
+            {
+                NotifySettingsSaveSkipped();
+            }
             return;
         }
 
@@ -1392,7 +1395,10 @@ public partial class MainWindow : Window
         {
             _settingsLoadFailed = true;
             AppLogger.Log("settings_save_skipped_load_failed");
-            NotifySettingsSaveSkipped();
+            if (notifyUser)
+            {
+                NotifySettingsSaveSkipped();
+            }
             return;
         }
 
@@ -1440,7 +1446,7 @@ public partial class MainWindow : Window
 
         _settingsSaveNotificationShown = true;
         MessageBox.Show(
-            "Yazi Terminal could not read settings.json, so this change was not saved. Fix the file and restart Yazi Terminal.",
+            "Yazi Terminal could not read settings.json, so this change was not saved. Fix the file and save it again; valid changes are applied automatically.",
             "Yazi Terminal",
             MessageBoxButton.OK,
             MessageBoxImage.Warning);

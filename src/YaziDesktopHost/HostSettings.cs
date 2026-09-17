@@ -491,9 +491,12 @@ internal static class HostSettingsStore
     private struct ByHandleFileInformation
     {
         public uint FileAttributes;
-        public long CreationTime;
-        public long LastAccessTime;
-        public long LastWriteTime;
+        public uint CreationTimeLow;
+        public uint CreationTimeHigh;
+        public uint LastAccessTimeLow;
+        public uint LastAccessTimeHigh;
+        public uint LastWriteTimeLow;
+        public uint LastWriteTimeHigh;
         public uint VolumeSerialNumber;
         public uint FileSizeHigh;
         public uint FileSizeLow;

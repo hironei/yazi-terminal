@@ -3,11 +3,15 @@
 ## Settings persistence and notification
 
 `HostSettingsStore.Save` resolves the final symbolic-link target as before.
-For an existing target, it reads the Windows file-link count. A count greater
-than one selects an in-place write so that all hard links continue to refer to
-the same file record. A single-link target continues to use a temporary file
-and replacement. `MainWindow` keeps the failed-load guard, but a user-triggered
-save reports one short warning per window; close-time saves only log and return.
+For an existing target, it reads the Windows file-link count using the exact
+4-byte-aligned `BY_HANDLE_FILE_INFORMATION` layout. A count greater than one
+selects an in-place write so that all hard links continue to refer to the same
+file record. A single-link target continues to use a temporary file and
+replacement. The in-place hard-link path is intentionally not transactional:
+another reader can observe a partially written file. `MainWindow` keeps the
+failed-load guard, but a user-triggered save reports one short warning per
+window; close-time saves only log and return. The settings-edit command does
+not report a warning for its preparatory save.
 
 ## Bridge input and state collection
 
@@ -17,12 +21,13 @@ release attempts the Shell menu using the current safe state; if freshness or
 target validation now rejects it, the normal Yazi path is still suppressed and
 an audible/logged feedback path explains the unavailable menu.
 
-The Lua plugin subscribes to Yazi DDS events that can change the exported
-manager state. The callbacks only mark plugin state dirty. The asynchronous
-bridge loop collects `cx` state on the initial snapshot or after a dirty event;
-otherwise it emits the existing compact heartbeat frame using the last snapshot
-revision. This retains compatibility with the current frame protocol and keeps
-the expensive selected-path enumeration off unchanged heartbeat iterations.
+The Lua plugin reads `cx` state before every state or heartbeat frame. The
+comparison uses `states_equal`, so unchanged reads still emit the existing
+compact heartbeat frame using the last snapshot revision. If the read fails,
+the loop emits no heartbeat and allows the host's freshness cutoff to expire
+the last known state. This avoids depending on a selection event that is not
+available in the pinned Yazi runtime while retaining the existing frame
+protocol.
 
 ## Last-instance user feedback
 

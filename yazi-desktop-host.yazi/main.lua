@@ -301,11 +301,7 @@ local function json_envelope(instance_id, sequence, kind, payload)
 		.. "}"
 end
 
-local get_state = ya.sync(function(state, force)
-	if not force and not state.dirty then
-		return nil
-	end
-	state.dirty = false
+local get_state = ya.sync(function()
 	local current = cx.active.current
 	local selected = {}
 	for _, url in pairs(cx.active.selected) do
@@ -320,10 +316,6 @@ local get_state = ya.sync(function(state, force)
 		selected = selected,
 	}
 end)
-
-local function mark_state_dirty(state)
-	state.dirty = true
-end
 
 local function states_equal(left, right)
 	if not left or left.tab ~= right.tab or left.cwd ~= right.cwd or left.hovered ~= right.hovered
@@ -355,16 +347,6 @@ local function setup(state, opts)
 	end
 
 	state.started = true
-	state.dirty = true
-	-- These callbacks run in Yazi's sync context and only mark a flag. The
-	-- expensive cx.active.selected traversal is deferred until the next state
-	-- frame that actually needs it. The select subscription is retained for
-	-- versions that publish it; hover/cd cover the current pinned runtime.
-	for _, event in ipairs({ "cd", "hover", "select", "rename", "bulk", "move", "trash", "delete" }) do
-		ps.sub(event, function()
-			mark_state_dirty(state)
-		end)
-	end
 	ya.async(function()
 		local function send(fd, sequence, kind, payload)
 			local ok, write_err = fd:write_all(json_envelope(instance_id, sequence, kind, payload) .. "\n")
@@ -389,26 +371,33 @@ local function setup(state, opts)
 				local sequence = 0
 				local last_state
 				local last_state_sequence
+				local state_read_failed = false
 				local connected = send(fd, sequence, "hello", "{\"capabilities\":[\"snapshot\",\"state\",\"commands\",\"heartbeat\"]"
 					.. ",\"commands\":" .. json_commands(get_all_commands()) .. "}")
 				if connected then
 					while true do
-						local snapshot = get_state(last_state == nil) or last_state
-						sequence = sequence + 1
-						local changed = snapshot ~= last_state
-						local kind = not last_state and "snapshot" or "state"
-						local payload = kind == "snapshot"
-							and json_snapshot(path_kind, snapshot)
-							or changed
-							and json_state_update(path_kind, snapshot)
-							or json_heartbeat(snapshot.tab, last_state_sequence)
-						if not send(fd, sequence, kind, payload) then
-							connected = false
-							break
-						end
-						if kind == "snapshot" or changed then
-							last_state = snapshot
-							last_state_sequence = sequence
+						local read_ok, snapshot = pcall(get_state)
+						if read_ok and snapshot then
+							state_read_failed = false
+							sequence = sequence + 1
+							local changed = not states_equal(last_state, snapshot)
+							local kind = not last_state and "snapshot" or "state"
+							local payload = kind == "snapshot"
+								and json_snapshot(path_kind, snapshot)
+								or changed
+								and json_state_update(path_kind, snapshot)
+								or json_heartbeat(snapshot.tab, last_state_sequence)
+							if not send(fd, sequence, kind, payload) then
+								connected = false
+								break
+							end
+							if kind == "snapshot" or changed then
+								last_state = snapshot
+								last_state_sequence = sequence
+							end
+						elseif not state_read_failed then
+							state_read_failed = true
+							ya.err("yazi-desktop-host could not read manager state")
 						end
 						ya.sleep(interval)
 					end

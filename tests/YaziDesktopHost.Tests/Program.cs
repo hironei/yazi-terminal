@@ -46,7 +46,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
     ("bridge heartbeat refreshes matching state and rejects mismatches", BridgeHeartbeatRefreshesMatchingStateAndRejectsMismatches),
     ("bridge heartbeat capability controls freshness enforcement", BridgeHeartbeatCapabilityControlsFreshnessEnforcement),
-    ("bridge plugin collects state only after events", BridgePluginCollectsStateOnlyAfterEvents),
+    ("bridge plugin reads state before every heartbeat", BridgePluginReadsStateBeforeEveryHeartbeat),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("bridge session publishes command catalog", BridgeSessionPublishesCommandCatalog),
@@ -985,14 +985,16 @@ static void BridgeHeartbeatCapabilityControlsFreshnessEnforcement()
     Assert(result.Status == YaziShellTargetStatus.Available);
 }
 
-static void BridgePluginCollectsStateOnlyAfterEvents()
+static void BridgePluginReadsStateBeforeEveryHeartbeat()
 {
     var source = File.ReadAllText(RepositoryFile("yazi-desktop-host.yazi", "main.lua"));
-    Assert(source.Contains("ps.sub(event", StringComparison.Ordinal));
-    Assert(source.Contains("state.dirty = true", StringComparison.Ordinal));
-    Assert(source.Contains("local snapshot = get_state(last_state == nil) or last_state", StringComparison.Ordinal));
+    Assert(source.Contains("local read_ok, snapshot = pcall(get_state)", StringComparison.Ordinal));
+    Assert(source.Contains("local changed = not states_equal(last_state, snapshot)", StringComparison.Ordinal));
+    Assert(source.Contains("or json_heartbeat(snapshot.tab, last_state_sequence)", StringComparison.Ordinal));
+    Assert(source.Contains("elseif not state_read_failed", StringComparison.Ordinal));
     var normalized = source.Replace("\r\n", "\n", StringComparison.Ordinal);
-    Assert(!normalized.Contains("local snapshot = get_state()\n", StringComparison.Ordinal));
+    Assert(!normalized.Contains("ps.sub(event", StringComparison.Ordinal));
+    Assert(!normalized.Contains("state.dirty", StringComparison.Ordinal));
 }
 
 static void BridgePipeRoundTripsFrame()
@@ -2368,9 +2370,11 @@ static void SettingsSavePreservesHardLink()
     try
     {
         HostSettingsStore.Save(HostSettings.Defaults, targetPath);
+        Assert(HostSettingsStore.TryGetHardLinkCount(targetPath, out var singleLinkCount));
+        Assert(singleLinkCount == 1);
         if (!TestNativeMethods.CreateHardLink(linkPath, targetPath, IntPtr.Zero))
         {
-            return;
+            throw new InvalidOperationException("Could not create the hard-link test fixture.");
         }
 
         Assert(HostSettingsStore.TryGetHardLinkCount(targetPath, out var beforeCount));

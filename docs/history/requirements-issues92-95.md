@@ -22,9 +22,10 @@ handoffs.
   even if bridge state becomes stale between the two messages. The Shell menu
   may be skipped when the state is no longer safe, but the normal Yazi input
   path must not receive an unmatched release.
-- The bridge plugin must avoid collecting the complete Yazi state on every
-  heartbeat. State collection is triggered by relevant DDS events; unchanged
-  iterations send the compact existing heartbeat frame.
+- The bridge plugin must read the complete current Yazi state before every
+  state or heartbeat frame so selection-only changes are observed even when no
+  selection event is available. A heartbeat may be sent only after that read
+  succeeds; a failed read must not refresh the freshness of an older state.
 - An unknown `--last-instance` handoff result must remain a no-duplicate-window
   outcome and must visibly tell the user that delivery could not be confirmed.
 - Issue #95 acceptance evidence must distinguish automated coverage from live
@@ -42,8 +43,8 @@ handoffs.
 ## Acceptance criteria
 
 - The solution builds and the executable test suite passes.
-- Tests cover settings status decisions, hard-link preservation, right-click
-  interception state retention, event-driven plugin contract, and Unknown
+- Tests cover settings status decisions, normal-file and hard-link counts,
+  right-click interception state retention, pre-heartbeat state reads, and Unknown
   handoff notification/fallback classification.
 - `git diff --check` passes and no unrelated user files are changed.
 - History documentation records every live check that was not executable in the
