@@ -371,7 +371,7 @@ local function setup(state, opts)
 				local sequence = 0
 				local last_state
 				local last_state_sequence
-				local connected = send(fd, sequence, "hello", "{\"capabilities\":[\"snapshot\",\"state\",\"commands\"]"
+				local connected = send(fd, sequence, "hello", "{\"capabilities\":[\"snapshot\",\"state\",\"commands\",\"heartbeat\"]"
 					.. ",\"commands\":" .. json_commands(get_all_commands()) .. "}")
 				if connected then
 					while true do

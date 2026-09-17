@@ -579,7 +579,10 @@ With the bridge plugin installed and connected, right-clicking opens the
 Windows Shell context menu for the selected or hovered item. Holding `Shift`
 while right-clicking opens the menu for Yazi's current directory (the parent
 folder of the displayed item). The bridge state must be available for either
-operation.
+operation. Current plugin versions advertise heartbeat support and are
+rejected when their state is more than one second old; older plugins remain
+usable without this freshness cutoff but do not provide the same stale-target
+protection.
 
 The host also supports Explorer/Desktop drag-and-drop in the validated
 directions. Ctrl/Shift Copy/Move behavior follows the Windows Shell effect
@@ -610,9 +613,10 @@ The fixture is for manual validation and is not part of normal Yazi display.
   loop does not deliver those keys to Yazi.
 - Packaged native HWND/WPF overlay behavior remains a separate manual gate.
 - Shell context-menu and drag targets come from the most recent bridge snapshot.
-  Snapshots older than one second are rejected. Very rapid hover changes can
-  still occur between two bridge polls, so verify the target before destructive
-  Shell actions.
+  Heartbeat-capable plugins have a one-second freshness cutoff; older plugins
+  do not advertise heartbeats and therefore do not receive that cutoff. Very
+  rapid hover changes can still occur between two bridge polls, so verify the
+  target before destructive Shell actions.
 - The host's left-button drag hook shares the terminal HWND with Yazi mouse
   reporting. Explorer/Desktop drag is validated, but text-selection gestures
   inside terminal output are not a separate supported interaction mode.

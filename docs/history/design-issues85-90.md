@@ -17,17 +17,22 @@ shared `TimeProvider`. The resolver compares elapsed time with
 full state only after a changed structured state, and a compact heartbeat-marked
 `state` frame carrying the last state sequence otherwise. Reusing the existing
 `state` kind keeps older hosts from disconnecting on an unknown message kind.
-The reducer accepts the marker only after a snapshot and updates freshness
-without changing paths; a mismatched revision is a connection error. The
-native right-click down path uses resolver status, and a release that has
-become stale is forwarded to normal input.
+The Lua hello advertises the `heartbeat` capability. The reducer records that
+negotiation in `YaziBridgeState`; only a negotiated peer is subject to the
+freshness cutoff or may refresh it with a heartbeat. Older plugins remain
+usable without periodic updates. The reducer accepts the marker only after a
+snapshot and updates freshness without changing paths; a mismatched revision
+is a connection error. The native right-click down path uses resolver status,
+and a release that has become stale is forwarded to normal input.
 
 ## Last instance and file opening
 
 The WPF app starts the last-instance send asynchronously before creating the
 main window. The client distinguishes accepted, explicitly rejected, and
-unknown-after-write results; only explicit rejection creates a new window, so
-an ACK loss cannot duplicate a request in a second window. The control server
+unknown-after-write results; a null or malformed ACK, timeout, or disconnect
+after the complete request write is unknown, while failures before that write
+remain rejected. Only explicit rejection creates a new window, so an ACK loss
+cannot duplicate a request in a second window. The control server
 has an outer fault boundary, logs failures, and removes its registry entry in
 cleanup. Registry metadata carries the target PID and the sender requests
 foreground permission with `AllowSetForegroundWindow`; Windows foreground-lock

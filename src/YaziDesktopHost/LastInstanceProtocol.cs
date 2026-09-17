@@ -112,6 +112,12 @@ public static class LastInstanceControlProtocol
 
     public static bool IsAcceptedAcknowledgement(string? frame)
     {
+        return TryParseAcknowledgement(frame, out var accepted) && accepted;
+    }
+
+    public static bool TryParseAcknowledgement(string? frame, out bool accepted)
+    {
+        accepted = false;
         if (string.IsNullOrWhiteSpace(frame))
         {
             return false;
@@ -121,11 +127,17 @@ public static class LastInstanceControlProtocol
         {
             using var document = JsonDocument.Parse(frame);
             var root = document.RootElement;
-            return root.ValueKind == JsonValueKind.Object
-                && TryGetString(root, "protocol", out var protocol)
-                && string.Equals(protocol, SupportedProtocol, StringComparison.Ordinal)
-                && root.TryGetProperty("accepted", out var accepted)
-                && accepted.ValueKind == JsonValueKind.True;
+            if (root.ValueKind != JsonValueKind.Object
+                || !TryGetString(root, "protocol", out var protocol)
+                || !string.Equals(protocol, SupportedProtocol, StringComparison.Ordinal)
+                || !root.TryGetProperty("accepted", out var acceptedElement)
+                || acceptedElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return false;
+            }
+
+            accepted = acceptedElement.GetBoolean();
+            return true;
         }
         catch (JsonException)
         {
@@ -520,18 +532,29 @@ public static class LastInstanceClient
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             await client.ConnectAsync(timeoutCancellation.Token).ConfigureAwait(false);
-            connected = true;
 
             await LastInstanceFrame.WriteAsync(
                 client,
                 frame,
                 LastInstanceControlProtocol.MaxFrameBytes,
                 timeoutCancellation.Token).ConfigureAwait(false);
+            // Once the request has been fully written, the existing instance
+            // may already have applied it.  From this point onward, a missing
+            // or malformed ACK must not start a second window.
+            connected = true;
             var acknowledgement = await LastInstanceFrame.ReadAsync(
                 client,
                 LastInstanceControlProtocol.MaxFrameBytes,
                 timeoutCancellation.Token).ConfigureAwait(false);
-            return LastInstanceControlProtocol.IsAcceptedAcknowledgement(acknowledgement)
+            if (acknowledgement is null
+                || !LastInstanceControlProtocol.TryParseAcknowledgement(
+                    acknowledgement,
+                    out var accepted))
+            {
+                return LastInstanceSendStatus.Unknown;
+            }
+
+            return accepted
                 ? LastInstanceSendStatus.Accepted
                 : LastInstanceSendStatus.Rejected;
         }

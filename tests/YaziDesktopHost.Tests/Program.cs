@@ -23,6 +23,7 @@ var tests = new (string Name, Action Test)[]
     ("last-instance client falls back for an unreachable endpoint", LastInstanceClientFallsBackForUnreachableEndpoint),
     ("last-instance client rejects invalid endpoint names", LastInstanceClientRejectsInvalidEndpointNames),
     ("last-instance client times out while waiting for ACK", LastInstanceClientTimesOutWhileWaitingForAcknowledgement),
+    ("last-instance client treats a closed ACK pipe as unknown", LastInstanceClientTreatsClosedAcknowledgementPipeAsUnknown),
     ("last-instance client rejects an invalid ACK frame", LastInstanceClientRejectsInvalidAcknowledgementFrame),
     ("last-instance control pipe accepts a directory request", LastInstanceControlPipeAcceptsDirectoryRequest),
     ("last-instance control pipe accepts a file request", LastInstanceControlPipeAcceptsFileRequest),
@@ -42,6 +43,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge reducer rejects a snapshot before hello", BridgeReducerRejectsSnapshotBeforeHello),
     ("bridge reducer requires a fresh snapshot after disconnect", BridgeReducerRequiresFreshSnapshot),
     ("bridge heartbeat refreshes matching state and rejects mismatches", BridgeHeartbeatRefreshesMatchingStateAndRejectsMismatches),
+    ("bridge heartbeat capability controls freshness enforcement", BridgeHeartbeatCapabilityControlsFreshnessEnforcement),
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("bridge session publishes command catalog", BridgeSessionPublishesCommandCatalog),
@@ -434,6 +436,33 @@ static void LastInstanceClientTimesOutWhileWaitingForAcknowledgement()
     Assert(status == LastInstanceSendStatus.Unknown);
 }
 
+static void LastInstanceClientTreatsClosedAcknowledgementPipeAsUnknown()
+{
+    var pipeName = $"yazi-terminal-control-{Guid.NewGuid():N}";
+    using var server = new NamedPipeServerStream(
+        pipeName,
+        PipeDirection.InOut,
+        1,
+        PipeTransmissionMode.Byte,
+        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+    var acceptTask = server.WaitForConnectionAsync();
+    var resultTask = Task.Run(() => LastInstanceClient.SendAsync(
+        new LastInstanceEndpoint(pipeName),
+        @"C:\work",
+        TimeSpan.FromSeconds(2)));
+
+    Assert(acceptTask.Wait(TimeSpan.FromSeconds(2)));
+    Assert(LastInstanceFrame.ReadAsync(
+            server,
+            LastInstanceControlProtocol.MaxFrameBytes,
+            CancellationToken.None)
+        .GetAwaiter()
+        .GetResult() is not null);
+    server.Dispose();
+
+    Assert(resultTask.GetAwaiter().GetResult() == LastInstanceSendStatus.Unknown);
+}
+
 static void LastInstanceClientRejectsInvalidAcknowledgementFrame()
 {
     var acknowledgements = new[]
@@ -455,12 +484,18 @@ static void LastInstanceClientRejectsInvalidAcknowledgementFrame()
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         var acceptTask = server.WaitForConnectionAsync();
-        var resultTask = Task.Run(() => LastInstanceClient.TrySend(
+        var resultTask = Task.Run(() => LastInstanceClient.SendAsync(
             new LastInstanceEndpoint(pipeName),
             @"C:\work",
             TimeSpan.FromSeconds(2)));
 
         Assert(acceptTask.Wait(TimeSpan.FromSeconds(2)));
+        Assert(LastInstanceFrame.ReadAsync(
+                server,
+                LastInstanceControlProtocol.MaxFrameBytes,
+                CancellationToken.None)
+            .GetAwaiter()
+            .GetResult() is not null);
         try
         {
             server.Write(acknowledgement, 0, acknowledgement.Length);
@@ -471,7 +506,7 @@ static void LastInstanceClientRejectsInvalidAcknowledgementFrame()
             // The client may close after rejecting the frame.
         }
 
-        Assert(!resultTask.GetAwaiter().GetResult());
+        Assert(resultTask.GetAwaiter().GetResult() == LastInstanceSendStatus.Unknown);
     }
 }
 
@@ -882,7 +917,7 @@ static void BridgeHeartbeatRefreshesMatchingStateAndRejectsMismatches()
     var instanceId = Guid.NewGuid();
     var parser = new YaziBridgeMessageParser();
     var reducer = new YaziBridgeStateReducer(instanceId);
-    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(HeartbeatHelloFrame(instanceId), instanceId));
     reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
     var before = reducer.State;
 
@@ -900,6 +935,39 @@ static void BridgeHeartbeatRefreshesMatchingStateAndRejectsMismatches()
         instanceId));
     Assert(reducer.ConnectionRejected);
     Assert(reducer.UnavailableReason == "heartbeat-revision-mismatch");
+}
+
+static void BridgeHeartbeatCapabilityControlsFreshnessEnforcement()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var heartbeatReducer = new YaziBridgeStateReducer(instanceId);
+    heartbeatReducer.Apply(parser.Parse(HeartbeatHelloFrame(instanceId), instanceId));
+    heartbeatReducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
+    Assert(heartbeatReducer.State?.SupportsHeartbeat == true);
+
+    var legacyInstanceId = Guid.NewGuid();
+    var legacyReducer = new YaziBridgeStateReducer(legacyInstanceId);
+    legacyReducer.Apply(parser.Parse(HelloFrame(legacyInstanceId), legacyInstanceId));
+    legacyReducer.Apply(parser.Parse(SnapshotFrame(legacyInstanceId, 1), legacyInstanceId));
+    Assert(legacyReducer.State?.SupportsHeartbeat == false);
+
+    var staleLegacy = legacyReducer.State! with
+    {
+        LastUpdated = DateTimeOffset.UtcNow - TimeSpan.FromSeconds(2),
+        LastUpdatedTimestamp = 0,
+    };
+    var result = YaziShellTargetResolver.Resolve(
+        staleLegacy with
+        {
+            Hovered = new YaziBridgePath(
+                YaziBridgePathKind.Filesystem,
+                @"C:\work\hovered.txt"),
+        },
+        YaziShellInvocation.SelectedOrHovered,
+        DateTimeOffset.UtcNow,
+        TimeSpan.FromSeconds(1));
+    Assert(result.Status == YaziShellTargetStatus.Available);
 }
 
 static void BridgePipeRoundTripsFrame()
@@ -2551,7 +2619,8 @@ static YaziBridgeState AvailableState(YaziBridgePath? hovered, IReadOnlyList<Yaz
         hovered,
         selected,
         YaziBridgeAvailability.Available,
-        DateTimeOffset.UtcNow);
+        DateTimeOffset.UtcNow,
+        SupportsHeartbeat: true);
 
 static byte[] SnapshotFrame(Guid instanceId, ulong sequence) => Frame(
     instanceId,
@@ -2572,6 +2641,12 @@ static byte[] StateFrame(Guid instanceId, ulong sequence) => Frame(
     new { present = new[] { "tab" }, tab = 0 });
 
 static byte[] HelloFrame(Guid instanceId) => Frame(instanceId, 0, "hello", new { });
+
+static byte[] HeartbeatHelloFrame(Guid instanceId) => Frame(
+    instanceId,
+    0,
+    "hello",
+    new { capabilities = new[] { "heartbeat" } });
 
 static byte[] Frame(Guid instanceId, ulong sequence, string kind, object payload) =>
     System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(new
