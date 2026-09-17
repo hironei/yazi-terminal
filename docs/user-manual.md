@@ -617,9 +617,20 @@ The fixture is for manual validation and is not part of normal Yazi display.
   do not advertise heartbeats and therefore do not receive that cutoff. Very
   rapid hover changes can still occur between two bridge polls, so verify the
   target before destructive Shell actions.
+- The host intercepts the right mouse button before Yazi sees it, so a
+  right-click does not move Yazi's own hover cursor to the clicked row first.
+  The Shell context menu therefore always targets the selection or hover state
+  Yazi already reports, which is not guaranteed to be the row under the
+  pointer if the user right-clicks a different row than the one Yazi last
+  reported as hovered. Confirm the intended target (for example by left-click
+  or arrow-key navigation first) before a destructive Shell command such as
+  Delete.
 - The host's left-button drag hook shares the terminal HWND with Yazi mouse
   reporting. Explorer/Desktop drag is validated, but text-selection gestures
-  inside terminal output are not a separate supported interaction mode.
+  inside terminal output are not a separate supported interaction mode: any
+  left-button drag that starts while the bridge reports a selected or hovered
+  filesystem item is treated as an Explorer file drag, not a terminal
+  text-selection drag.
 - The exact supported Yazi/`ya` version policy is not yet a compatibility range;
   use the pinned fixture until that policy is defined.
 - The bridge plugin is an opt-in compatibility probe and is not a general
