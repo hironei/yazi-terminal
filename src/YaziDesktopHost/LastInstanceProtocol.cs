@@ -1,11 +1,19 @@
 using System.IO;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
 namespace YaziDesktopHost;
 
-public sealed record LastInstanceEndpoint(string PipeName);
+public sealed record LastInstanceEndpoint(string PipeName, int? ProcessId = null);
+
+public enum LastInstanceSendStatus
+{
+    Accepted,
+    Rejected,
+    Unknown,
+}
 
 public enum LastInstanceControlCommand
 {
@@ -104,6 +112,12 @@ public static class LastInstanceControlProtocol
 
     public static bool IsAcceptedAcknowledgement(string? frame)
     {
+        return TryParseAcknowledgement(frame, out var accepted) && accepted;
+    }
+
+    public static bool TryParseAcknowledgement(string? frame, out bool accepted)
+    {
+        accepted = false;
         if (string.IsNullOrWhiteSpace(frame))
         {
             return false;
@@ -113,11 +127,17 @@ public static class LastInstanceControlProtocol
         {
             using var document = JsonDocument.Parse(frame);
             var root = document.RootElement;
-            return root.ValueKind == JsonValueKind.Object
-                && TryGetString(root, "protocol", out var protocol)
-                && string.Equals(protocol, SupportedProtocol, StringComparison.Ordinal)
-                && root.TryGetProperty("accepted", out var accepted)
-                && accepted.ValueKind == JsonValueKind.True;
+            if (root.ValueKind != JsonValueKind.Object
+                || !TryGetString(root, "protocol", out var protocol)
+                || !string.Equals(protocol, SupportedProtocol, StringComparison.Ordinal)
+                || !root.TryGetProperty("accepted", out var acceptedElement)
+                || acceptedElement.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                return false;
+            }
+
+            accepted = acceptedElement.GetBoolean();
+            return true;
         }
         catch (JsonException)
         {
@@ -258,7 +278,10 @@ public sealed class LastInstanceRegistry
                 var temporaryPath = $"{_metadataPath}.{Guid.NewGuid():N}.tmp";
                 try
                 {
-                    var metadata = new LastInstanceMetadata(MetadataProtocol, pipeName);
+                    var metadata = new LastInstanceMetadata(
+                        MetadataProtocol,
+                        pipeName,
+                        Environment.ProcessId);
                     File.WriteAllText(temporaryPath, JsonSerializer.Serialize(metadata), new UTF8Encoding(false));
                     File.Move(temporaryPath, _metadataPath, overwrite: true);
                 }
@@ -348,12 +371,13 @@ public sealed class LastInstanceRegistry
             var metadata = JsonSerializer.Deserialize<LastInstanceMetadata>(File.ReadAllText(_metadataPath));
             if (metadata is null
                 || !string.Equals(metadata.Protocol, MetadataProtocol, StringComparison.Ordinal)
-                || !IsControlPipeName(metadata.PipeName))
+                || !IsControlPipeName(metadata.PipeName)
+                || metadata.ProcessId is <= 0)
             {
                 return false;
             }
 
-            endpoint = new LastInstanceEndpoint(metadata.PipeName);
+            endpoint = new LastInstanceEndpoint(metadata.PipeName, metadata.ProcessId);
             return true;
         }
         catch (IOException)
@@ -424,7 +448,10 @@ public sealed class LastInstanceRegistry
         return true;
     }
 
-    private sealed record LastInstanceMetadata(string Protocol, string PipeName);
+    private sealed record LastInstanceMetadata(
+        string Protocol,
+        string PipeName,
+        int? ProcessId = null);
 }
 
 public static class LastInstanceClient
@@ -453,10 +480,21 @@ public static class LastInstanceClient
         string directory,
         TimeSpan timeout)
     {
-        return await TrySendAsync(
+        return await SendAsync(
             endpoint,
             new LastInstanceControlRequest(directory),
-            timeout).ConfigureAwait(false);
+            timeout).ConfigureAwait(false) == LastInstanceSendStatus.Accepted;
+    }
+
+    public static Task<LastInstanceSendStatus> SendAsync(
+        LastInstanceEndpoint endpoint,
+        string directory,
+        TimeSpan timeout)
+    {
+        return SendAsync(
+            endpoint,
+            new LastInstanceControlRequest(directory),
+            timeout);
     }
 
     public static async Task<bool> TrySendAsync(
@@ -464,6 +502,16 @@ public static class LastInstanceClient
         LastInstanceControlRequest request,
         TimeSpan timeout)
     {
+        return await SendAsync(endpoint, request, timeout).ConfigureAwait(false)
+            == LastInstanceSendStatus.Accepted;
+    }
+
+    public static async Task<LastInstanceSendStatus> SendAsync(
+        LastInstanceEndpoint endpoint,
+        LastInstanceControlRequest request,
+        TimeSpan timeout)
+    {
+        var connected = false;
         try
         {
             ArgumentNullException.ThrowIfNull(endpoint);
@@ -472,9 +520,11 @@ public static class LastInstanceClient
             if (!LastInstanceRegistry.IsControlPipeName(endpoint.PipeName)
                 || timeout <= TimeSpan.Zero)
             {
-                return false;
+                return LastInstanceSendStatus.Rejected;
             }
 
+            var frame = LastInstanceControlProtocol.Serialize(request);
+            LastInstanceForeground.TryAllow(endpoint.ProcessId);
             using var timeoutCancellation = new CancellationTokenSource(timeout);
             using var client = new NamedPipeClientStream(
                 ".",
@@ -483,43 +533,95 @@ public static class LastInstanceClient
                 PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             await client.ConnectAsync(timeoutCancellation.Token).ConfigureAwait(false);
 
-            var frame = LastInstanceControlProtocol.Serialize(request);
             await LastInstanceFrame.WriteAsync(
                 client,
                 frame,
                 LastInstanceControlProtocol.MaxFrameBytes,
                 timeoutCancellation.Token).ConfigureAwait(false);
+            // Once the request has been fully written, the existing instance
+            // may already have applied it.  From this point onward, a missing
+            // or malformed ACK must not start a second window.
+            connected = true;
             var acknowledgement = await LastInstanceFrame.ReadAsync(
                 client,
                 LastInstanceControlProtocol.MaxFrameBytes,
                 timeoutCancellation.Token).ConfigureAwait(false);
-            return LastInstanceControlProtocol.IsAcceptedAcknowledgement(acknowledgement);
+            if (acknowledgement is null
+                || !LastInstanceControlProtocol.TryParseAcknowledgement(
+                    acknowledgement,
+                    out var accepted))
+            {
+                return LastInstanceSendStatus.Unknown;
+            }
+
+            return accepted
+                ? LastInstanceSendStatus.Accepted
+                : LastInstanceSendStatus.Rejected;
         }
         catch (OperationCanceledException)
         {
-            return false;
+            return connected
+                ? LastInstanceSendStatus.Unknown
+                : LastInstanceSendStatus.Rejected;
         }
         catch (InvalidDataException)
         {
-            return false;
+            return connected
+                ? LastInstanceSendStatus.Unknown
+                : LastInstanceSendStatus.Rejected;
         }
         catch (TimeoutException)
         {
-            return false;
+            return connected
+                ? LastInstanceSendStatus.Unknown
+                : LastInstanceSendStatus.Rejected;
         }
         catch (IOException)
         {
-            return false;
+            return connected
+                ? LastInstanceSendStatus.Unknown
+                : LastInstanceSendStatus.Rejected;
         }
         catch (UnauthorizedAccessException)
         {
-            return false;
+            return connected
+                ? LastInstanceSendStatus.Unknown
+                : LastInstanceSendStatus.Rejected;
         }
         catch (ArgumentException)
+        {
+            return connected
+                ? LastInstanceSendStatus.Unknown
+                : LastInstanceSendStatus.Rejected;
+        }
+    }
+}
+
+internal static class LastInstanceForeground
+{
+    public static bool TryAllow(int? processId)
+    {
+        if (processId is not { } pid || pid <= 0)
+        {
+            return true;
+        }
+
+        try
+        {
+            return AllowSetForegroundWindow((uint)pid);
+        }
+        catch (DllNotFoundException)
+        {
+            return false;
+        }
+        catch (EntryPointNotFoundException)
         {
             return false;
         }
     }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool AllowSetForegroundWindow(uint processId);
 }
 
 public sealed class LastInstanceControlServer : IDisposable
@@ -650,6 +752,27 @@ public sealed class LastInstanceControlServer : IDisposable
         {
             // Normal shutdown.
         }
+        catch (Exception exception) when (!_shutdown.IsCancellationRequested)
+        {
+            AppLogger.Log("last_instance_control_loop_failed", exception);
+        }
+        finally
+        {
+            try
+            {
+                _server?.Dispose();
+            }
+            catch (Exception exception)
+            {
+                AppLogger.Log("last_instance_control_server_cleanup_failed", exception);
+            }
+
+            _server = null;
+            if (!_shutdown.IsCancellationRequested)
+            {
+                _registry.RemoveIfCurrent(PipeName);
+            }
+        }
     }
 
     private async Task HandleConnectionAsync(
@@ -692,8 +815,18 @@ public sealed class LastInstanceControlServer : IDisposable
                 accepted = await handler(request!, requestTimeout.Token).ConfigureAwait(false);
             }
         }
-        catch
+        catch (OperationCanceledException)
         {
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                AppLogger.Log("last_instance_control_request_timed_out");
+            }
+
+            accepted = false;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            AppLogger.Log("last_instance_control_request_failed", exception);
             accepted = false;
         }
 

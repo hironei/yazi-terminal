@@ -78,8 +78,10 @@ YaziTerminal.exe --last-instance C:\work\other-project
 YaziTerminal.exe --last-instance C:\work\project\README.md
 ```
 
-If the last instance is not available, `--last-instance` starts a new window
-with the requested directory.
+If the last instance explicitly rejects the request or is not available,
+`--last-instance` starts a new window with the requested directory. If the
+request was written but its acknowledgement was lost, the launcher does not
+open a second window because the existing instance may still be processing it.
 
 From Git Bash, quote the executable and directory when either path contains
 spaces:

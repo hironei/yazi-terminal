@@ -55,7 +55,9 @@ public sealed record YaziBridgeState(
     YaziBridgePath? Hovered,
     IReadOnlyList<YaziBridgePath> Selected,
     YaziBridgeAvailability Availability,
-    DateTimeOffset LastUpdated);
+    DateTimeOffset LastUpdated,
+    long LastUpdatedTimestamp = 0,
+    bool SupportsHeartbeat = false);
 
 public sealed class YaziBridgeProtocolException : Exception
 {
@@ -491,6 +493,7 @@ public sealed class YaziBridgeStateReducer
     private bool _handshakeCompleted;
     private bool _snapshotAccepted;
     private bool _connectionRejected;
+    private bool _supportsHeartbeat;
     private ulong? _lastSequence;
 
     public YaziBridgeStateReducer(Guid instanceId, TimeProvider? timeProvider = null)
@@ -529,6 +532,7 @@ public sealed class YaziBridgeStateReducer
                 }
 
                 _handshakeCompleted = true;
+                _supportsHeartbeat = HasCapability(message.Payload, "heartbeat");
                 return;
             case YaziBridgeMessageKind.Snapshot:
                 if (!_handshakeCompleted || _snapshotAccepted)
@@ -570,6 +574,7 @@ public sealed class YaziBridgeStateReducer
         _handshakeCompleted = false;
         _snapshotAccepted = false;
         _connectionRejected = false;
+        _supportsHeartbeat = false;
         _lastSequence = null;
         UnavailableReason = "disconnect";
     }
@@ -583,6 +588,13 @@ public sealed class YaziBridgeStateReducer
         }
 
         var payload = message.Payload;
+        if (payload.TryGetProperty("heartbeat", out var heartbeat)
+            && heartbeat.ValueKind == JsonValueKind.True)
+        {
+            ApplyHeartbeat(message);
+            return;
+        }
+
         var present = RequiredStringArray(payload, "present");
         if (present.Count == 0)
         {
@@ -625,7 +637,38 @@ public sealed class YaziBridgeStateReducer
             hovered,
             selected,
             YaziBridgeAvailability.Available,
-            _timeProvider.GetUtcNow());
+            _timeProvider.GetUtcNow(),
+            _timeProvider.GetTimestamp(),
+            _supportsHeartbeat);
+        UnavailableReason = null;
+    }
+
+    private void ApplyHeartbeat(YaziBridgeEnvelope message)
+    {
+        if (_state is null || _state.Availability != YaziBridgeAvailability.Available)
+        {
+            RejectConnection("snapshot-required");
+            return;
+        }
+
+        if (!_supportsHeartbeat)
+        {
+            RejectConnection("heartbeat-not-negotiated");
+            return;
+        }
+
+        var revision = RequiredUInt64(message.Payload, "revision");
+        if (revision != _state.Sequence)
+        {
+            RejectConnection("heartbeat-revision-mismatch");
+            return;
+        }
+
+        _state = _state with
+        {
+            LastUpdated = _timeProvider.GetUtcNow(),
+            LastUpdatedTimestamp = _timeProvider.GetTimestamp(),
+        };
         UnavailableReason = null;
     }
 
@@ -640,7 +683,30 @@ public sealed class YaziBridgeStateReducer
             ParseNullablePath(RequiredProperty(payload, "hovered"), "hovered"),
             ParsePathArray(RequiredProperty(payload, "selected"), "selected"),
             YaziBridgeAvailability.Available,
-            _timeProvider.GetUtcNow());
+            _timeProvider.GetUtcNow(),
+            _timeProvider.GetTimestamp(),
+            _supportsHeartbeat);
+    }
+
+    private static bool HasCapability(JsonElement helloPayload, string capability)
+    {
+        if (helloPayload.ValueKind != JsonValueKind.Object
+            || !helloPayload.TryGetProperty("capabilities", out var capabilities)
+            || capabilities.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (var item in capabilities.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String
+                && string.Equals(item.GetString(), capability, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void MarkUnavailable(string reason)
@@ -725,6 +791,17 @@ public sealed class YaziBridgeStateReducer
         if (!value.TryGetInt32(out var number) || number < 0)
         {
             throw new YaziBridgeProtocolException($"Bridge field '{name}' must be a non-negative integer.");
+        }
+
+        return number;
+    }
+
+    private static ulong RequiredUInt64(JsonElement parent, string name)
+    {
+        var value = RequiredProperty(parent, name);
+        if (!value.TryGetUInt64(out var number))
+        {
+            throw new YaziBridgeProtocolException($"Bridge field '{name}' must be an unsigned integer.");
         }
 
         return number;

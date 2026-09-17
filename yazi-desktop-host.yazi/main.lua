@@ -287,6 +287,11 @@ local function json_state_update(kind, state)
 		.. "}"
 end
 
+local function json_heartbeat(tab, revision)
+	return "{\"present\":[\"tab\"],\"tab\":" .. tostring(tab)
+		.. ",\"heartbeat\":true,\"revision\":" .. tostring(revision) .. "}"
+end
+
 local function json_envelope(instance_id, sequence, kind, payload)
 	return "{\"protocol\":\"yazi-desktop-host/1\""
 		.. ",\"instanceId\":" .. json_string(instance_id)
@@ -311,6 +316,20 @@ local get_state = ya.sync(function()
 		selected = selected,
 	}
 end)
+
+local function states_equal(left, right)
+	if not left or left.tab ~= right.tab or left.cwd ~= right.cwd or left.hovered ~= right.hovered
+		or #left.selected ~= #right.selected then
+		return false
+	end
+
+	for index, value in ipairs(left.selected) do
+		if value ~= right.selected[index] then
+			return false
+		end
+	end
+	return true
+end
 
 local function setup(state, opts)
 	if state.started then
@@ -350,23 +369,29 @@ local function setup(state, opts)
 				ya.sleep(retry_interval)
 			else
 				local sequence = 0
-				local last_snapshot
-				local connected = send(fd, sequence, "hello", "{\"capabilities\":[\"snapshot\",\"state\",\"commands\"]"
+				local last_state
+				local last_state_sequence
+				local connected = send(fd, sequence, "hello", "{\"capabilities\":[\"snapshot\",\"state\",\"commands\",\"heartbeat\"]"
 					.. ",\"commands\":" .. json_commands(get_all_commands()) .. "}")
 				if connected then
 					while true do
 						local snapshot = get_state()
-						local encoded_snapshot = json_snapshot(path_kind, snapshot)
 						sequence = sequence + 1
-						local kind = last_snapshot and "state" or "snapshot"
+						local changed = not states_equal(last_state, snapshot)
+						local kind = not last_state and "snapshot" or "state"
 						local payload = kind == "snapshot"
-							and encoded_snapshot
-							or json_state_update(path_kind, snapshot)
+							and json_snapshot(path_kind, snapshot)
+							or changed
+							and json_state_update(path_kind, snapshot)
+							or json_heartbeat(snapshot.tab, last_state_sequence)
 						if not send(fd, sequence, kind, payload) then
 							connected = false
 							break
 						end
-						last_snapshot = encoded_snapshot
+						if kind == "snapshot" or changed then
+							last_state = snapshot
+							last_state_sequence = sequence
+						end
 						ya.sleep(interval)
 					end
 				end
