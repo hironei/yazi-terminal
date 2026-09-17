@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Reflection;
 using System.IO;
+using System.Media;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -47,6 +48,7 @@ public partial class MainWindow : Window
     private FileSystemWatcher? _settingsWatcher;
     private DispatcherTimer? _settingsReloadTimer;
     private bool _settingsLoadFailed;
+    private bool _settingsSaveNotificationShown;
 
     private const int WmContextMenu = 0x007B;
     private const int WmRButtonDown = 0x0204;
@@ -776,22 +778,22 @@ public partial class MainWindow : Window
             var screenPoint = message == WmContextMenu
                 ? DecodeScreenPoint(lParam)
                 : DecodeClientPoint(hwnd, lParam);
+            var interceptedAtButtonDown = _rightClickInvocation is not null;
             var invocation = _rightClickInvocation ?? (IsKeyDown(VkShift)
                 ? YaziShellInvocation.CurrentDirectory
                 : YaziShellInvocation.SelectedOrHovered);
-            var suppressNormalInput = _rightClickInvocation is not null
-                && CanInterceptShellContextMenu(invocation);
             _rightClickInvocation = null;
-            if (TryQueueShellContextMenu(
+            var queued = TryQueueShellContextMenu(
                     invocation,
                     (int)screenPoint.X,
-                    (int)screenPoint.Y))
+                    (int)screenPoint.Y);
+            if (ShouldSuppressRightClickRelease(interceptedAtButtonDown, queued))
             {
                 handled = true;
-            }
-            else if (suppressNormalInput)
-            {
-                handled = true;
+                if (interceptedAtButtonDown && !queued)
+                {
+                    NotifyShellContextMenuUnavailable();
+                }
             }
 
             return IntPtr.Zero;
@@ -890,30 +892,44 @@ public partial class MainWindow : Window
 
         if (message == WmRButtonUp)
         {
+            var interceptedAtButtonDown = _rightClickInvocation is not null;
             var invocation = _rightClickInvocation ?? (IsKeyDown(VkShift)
                 ? YaziShellInvocation.CurrentDirectory
                 : YaziShellInvocation.SelectedOrHovered);
-            var suppressNormalInput = _rightClickInvocation is not null
-                && CanInterceptShellContextMenu(invocation);
             _rightClickInvocation = null;
             var screenPoint = DecodeClientPoint(hwnd, lParam);
-            return TryQueueShellContextMenu(
+            var queued = TryQueueShellContextMenu(
                     invocation,
                     (int)screenPoint.X,
-                    (int)screenPoint.Y)
-                || suppressNormalInput;
+                    (int)screenPoint.Y);
+            if (interceptedAtButtonDown && !queued)
+            {
+                NotifyShellContextMenuUnavailable();
+            }
+
+            // Once button-down was intercepted, never leak an unmatched
+            // button-up to Yazi if the state became stale in between.
+            return ShouldSuppressRightClickRelease(interceptedAtButtonDown, queued);
         }
 
         if (message == WmContextMenu && !IsKeyboardContextMenu(lParam))
         {
             var screenPoint = DecodeScreenPoint(lParam);
-            var invocation = IsKeyDown(VkShift)
+            var interceptedAtButtonDown = _rightClickInvocation is not null;
+            var invocation = _rightClickInvocation ?? (IsKeyDown(VkShift)
                 ? YaziShellInvocation.CurrentDirectory
-                : YaziShellInvocation.SelectedOrHovered;
-            return TryQueueShellContextMenu(
+                : YaziShellInvocation.SelectedOrHovered);
+            _rightClickInvocation = null;
+            var queued = TryQueueShellContextMenu(
                 invocation,
                 (int)screenPoint.X,
                 (int)screenPoint.Y);
+            if (interceptedAtButtonDown && !queued)
+            {
+                NotifyShellContextMenuUnavailable();
+            }
+
+            return ShouldSuppressRightClickRelease(interceptedAtButtonDown, queued);
         }
 
         if (message is WmKeyDown or WmSysKeyDown
@@ -1366,15 +1382,17 @@ public partial class MainWindow : Window
         if (!CanSaveSettings(_settingsLoadFailed))
         {
             AppLogger.Log("settings_save_skipped_load_failed");
+            NotifySettingsSaveSkipped();
             return;
         }
 
         var settingsPath = HostSettingsStore.GetPath();
         var settingsLoad = HostSettingsStore.LoadWithStatus(settingsPath);
-        if (settingsLoad.Status == HostSettingsLoadStatus.Failed)
+        if (!CanSaveSettings(_settingsLoadFailed, settingsLoad.Status))
         {
             _settingsLoadFailed = true;
             AppLogger.Log("settings_save_skipped_load_failed");
+            NotifySettingsSaveSkipped();
             return;
         }
 
@@ -1390,6 +1408,48 @@ public partial class MainWindow : Window
     internal static bool CanSaveSettings(bool settingsLoadFailed)
     {
         return !settingsLoadFailed;
+    }
+
+    internal static bool CanSaveSettings(
+        bool settingsLoadFailed,
+        HostSettingsLoadStatus currentLoadStatus)
+    {
+        return !settingsLoadFailed && currentLoadStatus != HostSettingsLoadStatus.Failed;
+    }
+
+    internal static bool ShouldSuppressRightClickRelease(
+        bool interceptedAtButtonDown,
+        bool shellMenuQueued)
+    {
+        return interceptedAtButtonDown || shellMenuQueued;
+    }
+
+    internal static bool ShouldNotifySettingsSaveSkipped(
+        bool isClosing,
+        bool notificationAlreadyShown)
+    {
+        return !isClosing && !notificationAlreadyShown;
+    }
+
+    private void NotifySettingsSaveSkipped()
+    {
+        if (!ShouldNotifySettingsSaveSkipped(_isClosing, _settingsSaveNotificationShown))
+        {
+            return;
+        }
+
+        _settingsSaveNotificationShown = true;
+        MessageBox.Show(
+            "Yazi Terminal could not read settings.json, so this change was not saved. Fix the file and restart Yazi Terminal.",
+            "Yazi Terminal",
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
+    }
+
+    private static void NotifyShellContextMenuUnavailable()
+    {
+        SystemSounds.Exclamation.Play();
+        AppLogger.Log("shell_context_menu_intercepted_target_unavailable");
     }
 
     private void DisposeBridgeEnvironment()

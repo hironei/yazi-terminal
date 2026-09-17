@@ -1,7 +1,9 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows.Media;
+using Microsoft.Win32.SafeHandles;
 
 namespace YaziDesktopHost;
 
@@ -176,10 +178,22 @@ internal static class HostSettingsStore
                 settings.FontSize,
                 SerializeThemeColors(settings.DarkColors, settings.LightColors),
                 SerializeWindowPlacement(settings.WindowPlacement));
+            var serialized = JsonSerializer.Serialize(persisted, SerializerOptions);
+            if (File.Exists(writePath)
+                && TryGetHardLinkCount(writePath, out var hardLinkCount)
+                && hardLinkCount > 1)
+            {
+                // Replacing the directory entry would split every other hard
+                // link from this settings file. Preserve the file record when
+                // Windows reports that it is shared by multiple links.
+                File.WriteAllText(writePath, serialized);
+                return;
+            }
+
             var temporaryPath = $"{writePath}.{Guid.NewGuid():N}.tmp";
             try
             {
-                File.WriteAllText(temporaryPath, JsonSerializer.Serialize(persisted, SerializerOptions));
+                File.WriteAllText(temporaryPath, serialized);
                 File.Move(temporaryPath, writePath, overwrite: true);
             }
             finally
@@ -230,6 +244,32 @@ internal static class HostSettingsStore
         }
 
         throw new IOException("The settings file contains too many link levels.");
+    }
+
+    internal static bool TryGetHardLinkCount(string path, out uint count)
+    {
+        count = 0;
+        try
+        {
+            using var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            if (!GetFileInformationByHandle(stream.SafeFileHandle, out var information))
+            {
+                return false;
+            }
+
+            count = information.NumberOfLinks;
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException
+            or UnauthorizedAccessException
+            or NotSupportedException)
+        {
+            return false;
+        }
     }
 
     internal static string GetPath()
@@ -439,5 +479,26 @@ internal static class HostSettingsStore
         return color is { } value
             ? JsonSerializer.SerializeToElement(value.ToHex(), SerializerOptions)
             : null;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetFileInformationByHandle(
+        SafeFileHandle fileHandle,
+        out ByHandleFileInformation information);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public long CreationTime;
+        public long LastAccessTime;
+        public long LastWriteTime;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
     }
 }
