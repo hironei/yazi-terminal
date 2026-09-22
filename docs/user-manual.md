@@ -590,6 +590,26 @@ protection. If a right-click becomes stale between button-down and release,
 the host suppresses the unmatched release and gives an audible warning instead
 of passing it to Yazi.
 
+The same menus can be assigned to any Yazi manager key in `keymap.toml`:
+
+```toml
+[[mgr.prepend_keymap]]
+on = ["<C-m>"]
+run = "plugin yazi-desktop-host --args=context-menu"
+
+[[mgr.prepend_keymap]]
+on = ["<C-S-m>"]
+run = "plugin yazi-desktop-host --args=context-menu-cwd"
+```
+
+`context-menu` uses the current selection, or the hovered item when there is
+no selection. `context-menu-cwd` uses the current directory. Before the Shell
+menu is created, Junction and SymbolicLink components are resolved to their
+filesystem targets, including links in parent directories. If resolution
+fails, the host does not fall back to the apparent link path. The existing
+right-click and F10 shortcuts remain available. OneDrive-specific link-copy
+and sharing actions are not added by these commands.
+
 The host also supports Explorer/Desktop drag-and-drop in the validated
 directions. Ctrl/Shift Copy/Move behavior follows the Windows Shell effect
 negotiation.
@@ -622,7 +642,9 @@ The fixture is for manual validation and is not part of normal Yazi display.
   Heartbeat-capable plugins have a one-second freshness cutoff; older plugins
   do not advertise heartbeats and therefore do not receive that cutoff. Very
   rapid hover changes can still occur between two bridge polls, so verify the
-  target before destructive Shell actions.
+  target before destructive Shell actions. Keymap-triggered menus use the
+  cursor position only for popup placement; the target still comes from the
+  latest bridge state.
 - The host intercepts the right mouse button before Yazi sees it, so a
   right-click does not move Yazi's own hover cursor to the clicked row first.
   The Shell context menu therefore always targets the selection or hover state

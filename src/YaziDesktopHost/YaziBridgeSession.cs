@@ -31,6 +31,8 @@ public sealed class YaziBridgeSession : IAsyncDisposable
 
     public event Action<IReadOnlyList<YaziBridgeCommand>>? CommandsChanged;
 
+    public event Action<string>? CommandRequested;
+
     public event Action<string>? Disconnected;
 
     public YaziBridgeState? State => _reducer.State;
@@ -178,6 +180,15 @@ public sealed class YaziBridgeSession : IAsyncDisposable
                 {
                     SetCommands(_commandCatalogParser.Parse(message.Payload));
                 }
+                else if (message.Kind == YaziBridgeMessageKind.Command
+                    && YaziBridgeCommandRequestParser.TryParse(message.Payload, out var command))
+                {
+                    RaiseCommandRequested(command);
+                }
+                else if (message.Kind == YaziBridgeMessageKind.Command)
+                {
+                    AppLogger.Log("yazi_bridge_command_ignored");
+                }
             }
             catch (YaziBridgeProtocolException)
             {
@@ -219,6 +230,18 @@ public sealed class YaziBridgeSession : IAsyncDisposable
         catch
         {
             // A feature subscriber must not change the session shutdown result.
+        }
+    }
+
+    private void RaiseCommandRequested(string command)
+    {
+        try
+        {
+            CommandRequested?.Invoke(command);
+        }
+        catch
+        {
+            // A feature subscriber must not terminate the bridge receive loop.
         }
     }
 

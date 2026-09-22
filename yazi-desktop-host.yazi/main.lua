@@ -32,6 +32,42 @@ local function json_path_array(kind, values)
 	return "[" .. table.concat(encoded, ",") .. "]"
 end
 
+local MAX_PENDING_COMMANDS = 8
+
+local function is_context_menu_command(command)
+	return command == "context-menu" or command == "context-menu-cwd"
+end
+
+local function enqueue_context_menu(state, command)
+	if not is_context_menu_command(command) then
+		return false
+	end
+	if not state.started or not state.bridge_connected then
+		ya.err("yazi-desktop-host bridge is unavailable for context-menu request")
+		return false
+	end
+	if #state.pending_commands >= MAX_PENDING_COMMANDS then
+		ya.err("yazi-desktop-host context-menu request queue is full")
+		return false
+	end
+	table.insert(state.pending_commands, command)
+	return true
+end
+
+local request_context_menu = ya and ya.sync(function(state, command)
+	return enqueue_context_menu(state, command)
+end)
+
+local set_bridge_connected = ya and ya.sync(function(state, connected)
+	state.bridge_connected = connected
+end)
+
+local take_pending_commands = ya and ya.sync(function(state)
+	local pending = state.pending_commands or {}
+	state.pending_commands = {}
+	return pending
+end)
+
 local function trim(value)
 	return value:gsub("^%s+", ""):gsub("%s+$", "")
 end
@@ -83,7 +119,7 @@ local function array_values(value)
 	end
 	index = index + 1
 
-	while true do
+		while true do
 		skip_whitespace()
 		local quote = value:sub(index, index)
 		if quote == "]" then
@@ -335,6 +371,8 @@ local function setup(state, opts)
 	if state.started then
 		return
 	end
+	state.pending_commands = {}
+	state.bridge_connected = false
 
 	local pipe = opts.pipe or os.getenv("YAZI_DESKTOP_HOST_PIPE")
 	local instance_id = opts.instance_id or os.getenv("YAZI_DESKTOP_HOST_INSTANCE_ID")
@@ -363,6 +401,8 @@ local function setup(state, opts)
 		end
 
 		while true do
+			set_bridge_connected(false)
+			take_pending_commands()
 			local fd, err = fs.access():write(true):open(Url(pipe))
 			if not fd then
 				ya.err("yazi-desktop-host could not open the bridge pipe", err)
@@ -374,6 +414,7 @@ local function setup(state, opts)
 				local state_read_failed = false
 				local connected = send(fd, sequence, "hello", "{\"capabilities\":[\"snapshot\",\"state\",\"commands\",\"heartbeat\"]"
 					.. ",\"commands\":" .. json_commands(get_all_commands()) .. "}")
+				set_bridge_connected(connected)
 				if connected then
 					while true do
 						local read_ok, snapshot = pcall(get_state)
@@ -395,6 +436,18 @@ local function setup(state, opts)
 								last_state = snapshot
 								last_state_sequence = sequence
 							end
+							if last_state then
+								for _, command in ipairs(take_pending_commands()) do
+									sequence = sequence + 1
+									if not send(fd, sequence, "command", "{\"command\":" .. json_string(command) .. "}") then
+										connected = false
+										break
+									end
+								end
+							end
+							if not connected then
+								break
+							end
 						elseif not state_read_failed then
 							state_read_failed = true
 							ya.err("yazi-desktop-host could not read manager state")
@@ -402,6 +455,7 @@ local function setup(state, opts)
 						ya.sleep(interval)
 					end
 				end
+				set_bridge_connected(false)
 				if not connected then
 					ya.sleep(retry_interval)
 				end
@@ -412,5 +466,13 @@ end
 
 return {
 	setup = setup,
+	entry = function(_, job)
+		local args = job and job.args
+		if type(args) == "table" then
+			args = args[1] or args.args
+		end
+		return request_context_menu and request_context_menu(args) or false
+	end,
 	parse_keymap_file = parse_keymap_file,
+	request_context_menu = request_context_menu,
 }
