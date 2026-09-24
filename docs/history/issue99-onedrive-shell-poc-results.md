@@ -2,12 +2,17 @@
 
 ## Automated checks
 
-- The standalone `OneDriveShellPoc` builds as part of the solution.
-- `--help` documents enumeration and explicit invocation modes.
-- Invalid and ambiguous invocation targets are rejected before
-  `InvokeCommand`.
-- The solution build, executable tests, and format verification are recorded
-  in the pull request validation summary.
+- The standalone `OneDriveShellPoc` builds as part of the solution and
+  `--help` starts without requiring a OneDrive installation.
+- `--invoke-id` skips canonical-verb probes; enumeration and verb invocation
+  use one worker per leaf command, with a configurable
+  `--verb-probe-timeout-ms` (100–60000 ms, default 3000 ms).
+- The repository's existing executable test suite does not reference this
+  standalone tool. There are no automated unit tests for its argument parser,
+  menu enumeration, resource cleanup, or invocation guards; those behaviors
+  must not be described as automatically verified.
+- Build, existing executable test suite, format verification, and the `--help`
+  smoke test are recorded separately in the pull request validation summary.
 
 ## Identifier policy and conclusion
 
@@ -38,7 +43,21 @@ menu output or discovered identifier values.
 
 ## Acceptance boundary
 
-Automated checks validate parsing, enumeration, resource cleanup, and explicit
-invocation guards. They do not establish live OneDrive registration, menu
-contents, successful Share/Copy Link behavior, clipboard contents, or
-cross-environment identifier stability. These remain operator-local checks.
+The operator confirmed locally that the normal OneDrive folder menu could be
+opened and that its Share action displayed the copied-link confirmation. No
+menu JSON, path, or discovered identifier was retained here. This manual check
+does not establish behavior on another installation.
+
+Automated checks currently cover compilation, formatting, the existing host
+test suite, and CLI help only; they do not unit-test this tool's parser,
+enumeration, resource cleanup, or invocation guards. Live checks do not verify
+clipboard contents or cross-environment identifier stability.
+
+Invocation uses a null owner HWND and does not run a Windows message loop or
+forward `IContextMenu2/3` messages. Handlers that need an owner window, posted
+message processing, or a live context-menu lifetime can fail or appear to do
+nothing. The temporary menu is destroyed as the command exits. Enumeration
+also does not send `WM_INITMENUPOPUP`, so handlers that populate submenus only
+when opened may not expose their nested commands in the listing. These are
+limitations of this diagnostic PoC, not evidence that the host integration
+will behave the same way.

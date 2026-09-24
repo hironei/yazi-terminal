@@ -14,6 +14,7 @@ internal static class Program
     private const uint CommandLast = 0x7FFF;
     private const uint CmfExplore = 0x00000004;
     private const uint GcsVerbA = 0x00000000;
+    private const uint GcsVerbW = 0x00000004;
     private const uint MiimFtype = 0x00000001;
     private const uint MiimId = 0x00000002;
     private const uint MiimSubmenu = 0x00000004;
@@ -22,6 +23,8 @@ internal static class Program
     private const int SwShownormal = 1;
     private const int MaxMenuDepth = 32;
     private const int MaxTextLength = 1024;
+    private const int DefaultVerbProbeTimeoutMilliseconds = 3000;
+    private const int MaxVerbProbeTimeoutMilliseconds = 60000;
 
     private static readonly Guid IidShellFolder = new("000214E6-0000-0000-C000-000000000046");
     private static readonly Guid IidContextMenu = new("000214E4-0000-0000-C000-000000000046");
@@ -50,7 +53,9 @@ internal static class Program
         try
         {
             using var context = ShellContext.Open(options.Path);
-            var entries = context.Enumerate();
+            var entries = context.Enumerate(
+                includeCanonicalVerbs: options.Invocation?.CommandId is null,
+                options.VerbProbeTimeoutMilliseconds);
             if (options.Invocation is not null)
             {
                 var invocation = ResolveInvocation(entries, options.Invocation);
@@ -81,6 +86,11 @@ internal static class Program
         catch (Win32Exception exception)
         {
             Console.Error.WriteLine($"error: Win32 operation failed ({exception.NativeErrorCode})");
+            return 2;
+        }
+        catch (InvalidCastException)
+        {
+            Console.Error.WriteLine("error: Shell returned an incompatible COM interface");
             return 2;
         }
     }
@@ -150,6 +160,24 @@ internal static class Program
             }));
             return 0;
         }
+        catch (ShellPocException)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                status = "failed:shell-error",
+                value = (string?)null,
+            }));
+            return 0;
+        }
+        catch (InvalidCastException)
+        {
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                status = "failed:invalid-com-interface",
+                value = (string?)null,
+            }));
+            return 0;
+        }
     }
 
     private static bool TryParseArguments(
@@ -166,6 +194,7 @@ internal static class Program
         }
 
         var json = false;
+        var verbProbeTimeoutMilliseconds = DefaultVerbProbeTimeoutMilliseconds;
         Invocation? invocation = null;
         for (var index = 1; index < args.Length; index++)
         {
@@ -180,6 +209,16 @@ internal static class Program
 
                     json = true;
                     break;
+                case "--verb-probe-timeout-ms":
+                    if (!TryReadValue(args, ref index, out var timeoutText)
+                        || !int.TryParse(timeoutText, NumberStyles.None, CultureInfo.InvariantCulture, out verbProbeTimeoutMilliseconds)
+                        || verbProbeTimeoutMilliseconds is < 100 or > MaxVerbProbeTimeoutMilliseconds)
+                    {
+                        error = $"--verb-probe-timeout-ms must be between 100 and {MaxVerbProbeTimeoutMilliseconds}";
+                        return false;
+                    }
+
+                    break;
                 case "--invoke-id":
                     if (invocation is not null || !TryReadValue(args, ref index, out var idText))
                     {
@@ -187,7 +226,9 @@ internal static class Program
                         return false;
                     }
 
-                    if (!uint.TryParse(idText, out var commandId) || commandId < CommandFirst)
+                    if (!uint.TryParse(idText, NumberStyles.None, CultureInfo.InvariantCulture, out var commandId)
+                        || commandId < CommandFirst
+                        || commandId > CommandLast)
                     {
                         error = "--invoke-id must be a positive unsigned command ID";
                         return false;
@@ -216,7 +257,7 @@ internal static class Program
             }
         }
 
-        options = new Options(args[0], json, invocation);
+        options = new Options(args[0], json, invocation, verbProbeTimeoutMilliseconds);
         return true;
     }
 
@@ -246,14 +287,15 @@ internal static class Program
         }
 
         var matches = entries
-            .Where(candidate => candidate is { HasSubmenu: false, CanonicalVerbStatus: "ok" }
+            .Where(candidate => candidate is { HasSubmenu: false }
+                && candidate.CanonicalVerbStatus.StartsWith("ok-", StringComparison.Ordinal)
                 && string.Equals(candidate.CanonicalVerb, invocation.Verb, StringComparison.OrdinalIgnoreCase))
             .ToArray();
         return matches.Length switch
         {
             1 => new(matches[0], null),
-            0 => new(null, $"canonical verb '{invocation.Verb}' was not returned by the Shell menu"),
-            _ => new(null, $"canonical verb '{invocation.Verb}' matched multiple menu commands"),
+            0 => new(null, "canonical verb did not identify a returned Shell menu command"),
+            _ => new(null, "canonical verb matched multiple Shell menu commands"),
         };
     }
 
@@ -300,10 +342,12 @@ internal static class Program
     {
         Console.WriteLine("Usage:");
         Console.WriteLine("  OneDriveShellPoc.exe <path> [--json]");
+        Console.WriteLine("  OneDriveShellPoc.exe <path> [--verb-probe-timeout-ms <100..60000>] [--json]");
         Console.WriteLine("  OneDriveShellPoc.exe <path> --invoke-id <command-id> [--json]");
         Console.WriteLine("  OneDriveShellPoc.exe <path> --invoke-verb <canonical-verb> [--json]");
         Console.WriteLine();
         Console.WriteLine("Enumeration is the default. Invocation runs exactly one validated Shell command.");
+        Console.WriteLine("Canonical-verb probing starts a separate worker for each leaf command (default timeout: 3000 ms).");
     }
 
     private static string FormatHResult(int hResult) => $"0x{hResult:X8}";
@@ -317,7 +361,8 @@ internal static class Program
     private readonly record struct Options(
         string Path,
         bool Json,
-        Invocation? Invocation);
+        Invocation? Invocation,
+        int VerbProbeTimeoutMilliseconds);
 
     private sealed record Invocation(uint? CommandId, string? Verb)
     {
@@ -410,8 +455,9 @@ internal static class Program
                 var menu = CreatePopupMenu();
                 if (menu == IntPtr.Zero)
                 {
+                    var error = Marshal.GetLastWin32Error();
                     Marshal.ReleaseComObject(contextMenu);
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
+                    throw new Win32Exception(error);
                 }
 
                 try
@@ -450,18 +496,20 @@ internal static class Program
             }
         }
 
-        public IReadOnlyList<MenuEntry> Enumerate()
+        public IReadOnlyList<MenuEntry> Enumerate(bool includeCanonicalVerbs, int verbProbeTimeoutMilliseconds)
         {
             var entries = new List<MenuEntry>();
-            EnumerateMenu(_menu, [], [], entries, 0);
+            EnumerateMenu(_menu, [], [], entries, 0, includeCanonicalVerbs, verbProbeTimeoutMilliseconds);
             return entries;
         }
 
         public void Invoke(MenuEntry entry, Invocation invocation)
         {
             var hr = invocation.CommandId is not null
-                ? InvokeById(entry.CommandOffset!.Value)
-                : InvokeByVerb(invocation.Verb!);
+                ? InvokeById(entry.CommandOffset
+                    ?? throw new ShellPocException("the selected command offset is unavailable"))
+                : InvokeByVerb(entry.CanonicalVerb
+                    ?? throw new ShellPocException("the selected canonical verb is unavailable"));
             ThrowIfFailed(hr, "IContextMenu.InvokeCommand");
         }
 
@@ -484,7 +532,9 @@ internal static class Program
             IReadOnlyList<string> parentPath,
             IReadOnlyList<uint> parentPositions,
             ICollection<MenuEntry> entries,
-            int depth)
+            int depth,
+            bool includeCanonicalVerbs,
+            int verbProbeTimeoutMilliseconds)
         {
             if (depth > MaxMenuDepth)
             {
@@ -522,9 +572,14 @@ internal static class Program
                 var hasCommand = commandId is not null
                     && commandId.Value is >= CommandFirst and <= CommandLast;
                 uint? commandOffset = hasCommand ? commandId!.Value - CommandFirst : null;
-                var verb = hasCommand
-                    ? ReadCanonicalVerb(commandOffset!.Value, commandId!.Value, currentPositions, currentPath)
-                    : new VerbResult("not-applicable", null);
+                var verb = hasCommand && includeCanonicalVerbs
+                    ? ReadCanonicalVerb(
+                        commandOffset!.Value,
+                        commandId!.Value,
+                        currentPositions,
+                        currentPath,
+                        verbProbeTimeoutMilliseconds)
+                    : new VerbResult(hasCommand ? "not-requested" : "not-applicable", null);
 
                 entries.Add(new MenuEntry(
                     hasCommand ? commandId : null,
@@ -537,7 +592,14 @@ internal static class Program
 
                 if (hasSubmenu)
                 {
-                    EnumerateMenu(info.hSubMenu, currentPath, currentPositions, entries, depth + 1);
+                    EnumerateMenu(
+                        info.hSubMenu,
+                        currentPath,
+                        currentPositions,
+                        entries,
+                        depth + 1,
+                        includeCanonicalVerbs,
+                        verbProbeTimeoutMilliseconds);
                 }
             }
         }
@@ -546,7 +608,8 @@ internal static class Program
             uint commandOffset,
             uint commandId,
             IReadOnlyList<uint> positions,
-            IReadOnlyList<string> expectedPath)
+            IReadOnlyList<string> expectedPath,
+            int timeoutMilliseconds)
         {
             var processPath = Environment.ProcessPath
                 ?? throw new ShellPocException("the worker process path is unavailable");
@@ -555,7 +618,6 @@ internal static class Program
                 FileName = processPath,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
-                RedirectStandardError = true,
                 CreateNoWindow = true,
             };
             if (string.Equals(
@@ -580,7 +642,8 @@ internal static class Program
             startInfo.ArgumentList.Add(commandId.ToString(CultureInfo.InvariantCulture));
             using var process = Process.Start(startInfo)
                 ?? throw new ShellPocException("the canonical-verb worker could not start");
-            if (!process.WaitForExit(milliseconds: 3000))
+            var outputTask = process.StandardOutput.ReadToEndAsync();
+            if (!process.WaitForExit(milliseconds: timeoutMilliseconds))
             {
                 try
                 {
@@ -594,7 +657,7 @@ internal static class Program
                 return new VerbResult("timeout", null);
             }
 
-            var output = process.StandardOutput.ReadToEnd().Trim();
+            var output = outputTask.GetAwaiter().GetResult().Trim();
             if (process.ExitCode != 0 || string.IsNullOrEmpty(output))
             {
                 return new VerbResult($"native-crash:{process.ExitCode}", null);
@@ -668,9 +731,24 @@ internal static class Program
                 }
             }
 
-            var buffer = Marshal.AllocCoTaskMem(MaxTextLength);
+            var buffer = Marshal.AllocCoTaskMem(MaxTextLength * sizeof(char));
             try
             {
+                Marshal.Copy(new byte[MaxTextLength * sizeof(char)], 0, buffer, MaxTextLength * sizeof(char));
+                var unicodeHr = _contextMenu.GetCommandString(
+                    (IntPtr)commandOffset,
+                    GcsVerbW,
+                    IntPtr.Zero,
+                    buffer,
+                    MaxTextLength);
+                if (unicodeHr >= 0)
+                {
+                    var unicodeValue = Marshal.PtrToStringUni(buffer)?.TrimEnd('\0') ?? string.Empty;
+                    return string.IsNullOrEmpty(unicodeValue)
+                        ? new VerbResult("empty-unicode", null)
+                        : new VerbResult("ok-unicode", unicodeValue);
+                }
+
                 Marshal.Copy(new byte[MaxTextLength], 0, buffer, MaxTextLength);
                 var hr = _contextMenu.GetCommandString(
                     (IntPtr)commandOffset,
@@ -680,13 +758,15 @@ internal static class Program
                     MaxTextLength);
                 if (hr < 0)
                 {
-                    return new VerbResult($"failed:{FormatHResult(hr)}", null);
+                    return new VerbResult(
+                        $"failed-unicode:{FormatHResult(unicodeHr)};failed-ansi:{FormatHResult(hr)}",
+                        null);
                 }
 
                 var value = Marshal.PtrToStringAnsi(buffer)?.TrimEnd('\0') ?? string.Empty;
                 return string.IsNullOrEmpty(value)
-                    ? new VerbResult("empty", null)
-                    : new VerbResult("ok", value);
+                    ? new VerbResult("empty-ansi-after-unicode-failure", null)
+                    : new VerbResult("ok-ansi-after-unicode-failure", value);
             }
             finally
             {
