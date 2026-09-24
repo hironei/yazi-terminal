@@ -19,16 +19,19 @@ experiment. It does not reference `YaziDesktopHost`, `YaziBridgeState`, or
 ## Command contract
 
 ```text
-OneDriveShellPoc.exe <path> [--json]
-OneDriveShellPoc.exe <path> [--invoke-id <command-id>]
-OneDriveShellPoc.exe <path> [--invoke-verb <canonical-verb>]
+OneDriveShellPoc.exe <path> [--verb-probe-timeout-ms <100..60000>] [--json]
+OneDriveShellPoc.exe <path> --invoke-id <command-id> [--json]
+OneDriveShellPoc.exe <path> --invoke-verb <canonical-verb> [--verb-probe-timeout-ms <100..60000>] [--json]
 ```
 
 Enumeration is the default. An ID must be a leaf command returned by
 `GetMenuItemInfo`; a canonical verb must match exactly one non-empty successful
 `GetCommandString` result. The command ID is converted to the Shell-relative
 offset for the current `QueryContextMenu` invocation. Neither value is assumed
-to be a persistent or cross-environment identifier.
+to be a persistent or cross-environment identifier. `--invoke-id` skips
+canonical-verb probing, so it cannot be combined with the probe timeout option.
+Enumeration and `--invoke-verb` use a separate worker per leaf command; the
+timeout defaults to 3000 ms and can be set from 100 through 60000 ms.
 
 ## Resource ownership
 
@@ -41,11 +44,12 @@ menu is destroyed after enumeration or invocation. Unmanaged buffers used by
 
 `QueryContextMenu` populates a temporary popup menu. The CLI walks menu
 positions recursively, records whether an entry has a submenu, and obtains
-leaf IDs from `MENUITEMINFO`. The optional canonical-verb lookup uses
-`IContextMenu::GetCommandString`; its status is preserved so a failure or empty
-value cannot be mistaken for a usable identifier. If a native handler fails,
-the PoC's isolated probe process keeps that failure within the diagnostic
-boundary.
+leaf IDs from `MENUITEMINFO`. The optional canonical-verb lookup tries
+`GCS_VERBW` first and falls back to `GCS_VERBA` if the Unicode call fails or
+returns an empty value. The status records the successful or empty fallback
+route so a failure or empty value cannot be mistaken for a usable identifier.
+If a native handler fails, the PoC's isolated probe process keeps that failure
+within the diagnostic boundary.
 
 The ID invocation passes a numeric offset through `CMINVOKECOMMANDINFO`. The
 canonical-verb invocation uses `CMINVOKECOMMANDINFOEX` with

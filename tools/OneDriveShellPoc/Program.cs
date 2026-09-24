@@ -195,6 +195,7 @@ internal static class Program
 
         var json = false;
         var verbProbeTimeoutMilliseconds = DefaultVerbProbeTimeoutMilliseconds;
+        var verbProbeTimeoutSpecified = false;
         Invocation? invocation = null;
         for (var index = 1; index < args.Length; index++)
         {
@@ -210,6 +211,12 @@ internal static class Program
                     json = true;
                     break;
                 case "--verb-probe-timeout-ms":
+                    if (verbProbeTimeoutSpecified)
+                    {
+                        error = "--verb-probe-timeout-ms was specified more than once";
+                        return false;
+                    }
+
                     if (!TryReadValue(args, ref index, out var timeoutText)
                         || !int.TryParse(timeoutText, NumberStyles.None, CultureInfo.InvariantCulture, out verbProbeTimeoutMilliseconds)
                         || verbProbeTimeoutMilliseconds is < 100 or > MaxVerbProbeTimeoutMilliseconds)
@@ -218,6 +225,7 @@ internal static class Program
                         return false;
                     }
 
+                    verbProbeTimeoutSpecified = true;
                     break;
                 case "--invoke-id":
                     if (invocation is not null || !TryReadValue(args, ref index, out var idText))
@@ -255,6 +263,12 @@ internal static class Program
                     error = $"unknown option '{args[index]}'";
                     return false;
             }
+        }
+
+        if (verbProbeTimeoutSpecified && invocation?.CommandId is not null)
+        {
+            error = "--verb-probe-timeout-ms cannot be used with --invoke-id";
+            return false;
         }
 
         options = new Options(args[0], json, invocation, verbProbeTimeoutMilliseconds);
@@ -341,10 +355,9 @@ internal static class Program
     private static void PrintUsage()
     {
         Console.WriteLine("Usage:");
-        Console.WriteLine("  OneDriveShellPoc.exe <path> [--json]");
         Console.WriteLine("  OneDriveShellPoc.exe <path> [--verb-probe-timeout-ms <100..60000>] [--json]");
         Console.WriteLine("  OneDriveShellPoc.exe <path> --invoke-id <command-id> [--json]");
-        Console.WriteLine("  OneDriveShellPoc.exe <path> --invoke-verb <canonical-verb> [--json]");
+        Console.WriteLine("  OneDriveShellPoc.exe <path> --invoke-verb <canonical-verb> [--verb-probe-timeout-ms <100..60000>] [--json]");
         Console.WriteLine();
         Console.WriteLine("Enumeration is the default. Invocation runs exactly one validated Shell command.");
         Console.WriteLine("Canonical-verb probing starts a separate worker for each leaf command (default timeout: 3000 ms).");
@@ -744,12 +757,14 @@ internal static class Program
                 if (unicodeHr >= 0)
                 {
                     var unicodeValue = Marshal.PtrToStringUni(buffer)?.TrimEnd('\0') ?? string.Empty;
-                    return string.IsNullOrEmpty(unicodeValue)
-                        ? new VerbResult("empty-unicode", null)
-                        : new VerbResult("ok-unicode", unicodeValue);
+                    if (!string.IsNullOrEmpty(unicodeValue))
+                    {
+                        return new VerbResult("ok-unicode", unicodeValue);
+                    }
                 }
 
-                Marshal.Copy(new byte[MaxTextLength], 0, buffer, MaxTextLength);
+                var fallbackReason = unicodeHr >= 0 ? "unicode-empty" : "unicode-failure";
+                Marshal.Copy(new byte[MaxTextLength * sizeof(char)], 0, buffer, MaxTextLength * sizeof(char));
                 var hr = _contextMenu.GetCommandString(
                     (IntPtr)commandOffset,
                     GcsVerbA,
@@ -758,15 +773,18 @@ internal static class Program
                     MaxTextLength);
                 if (hr < 0)
                 {
+                    var unicodeStatus = unicodeHr < 0
+                        ? $"failed-unicode:{FormatHResult(unicodeHr)}"
+                        : "empty-unicode";
                     return new VerbResult(
-                        $"failed-unicode:{FormatHResult(unicodeHr)};failed-ansi:{FormatHResult(hr)}",
+                        $"{unicodeStatus};failed-ansi:{FormatHResult(hr)}",
                         null);
                 }
 
                 var value = Marshal.PtrToStringAnsi(buffer)?.TrimEnd('\0') ?? string.Empty;
                 return string.IsNullOrEmpty(value)
-                    ? new VerbResult("empty-ansi-after-unicode-failure", null)
-                    : new VerbResult("ok-ansi-after-unicode-failure", value);
+                    ? new VerbResult($"empty-ansi-after-{fallbackReason}", null)
+                    : new VerbResult($"ok-ansi-after-{fallbackReason}", value);
             }
             finally
             {
