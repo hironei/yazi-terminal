@@ -5,4 +5,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/YaziDesktopHost.Tests/YaziDesktopHost.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/OneDriveShellPoc/OneDriveShellPoc.csproj" />
+  </Folder>
 </Solution>
