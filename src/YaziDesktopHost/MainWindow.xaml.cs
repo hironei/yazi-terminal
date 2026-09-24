@@ -301,6 +301,7 @@ public partial class MainWindow : Window
             _bridgeServer = new YaziBridgePipeServer(instanceId);
             _bridgeSession = new YaziBridgeSession(instanceId, _bridgeServer);
             _bridgeSession.Disconnected += Bridge_Disconnected;
+            _bridgeSession.CommandRequested += Bridge_CommandRequested;
             _ = _bridgeSession.RunAsync();
 
             _bridgeEnvironment = YaziProcessLaunchConfiguration.EnterBridgeEnvironment(
@@ -1039,8 +1040,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!WindowsShellFinalPathResolver.TryResolve(
+                resolution.Target!,
+                out var finalTarget,
+                out var finalPathReason))
+        {
+            AppLogger.Log($"shell_context_menu_final_path_unavailable_{finalPathReason}");
+            return;
+        }
+
         var ownerHwnd = new WindowInteropHelper(this).Handle;
-        _shellContextMenu.Show(ownerHwnd, resolution.Target!, screenX, screenY);
+        _shellContextMenu.Show(ownerHwnd, finalTarget, screenX, screenY);
     }
 
     private void Term_TerminalOutput(object? sender, TerminalOutputEventArgs e)
@@ -1320,6 +1330,7 @@ public partial class MainWindow : Window
         }
 
         session.Disconnected -= Bridge_Disconnected;
+        session.CommandRequested -= Bridge_CommandRequested;
         _ = DisposeBridgeAsync(session);
     }
 
@@ -1341,6 +1352,47 @@ public partial class MainWindow : Window
         {
             AppLogger.Log($"yazi_bridge_disconnected_{reason}");
         }
+    }
+
+    private void Bridge_CommandRequested(string command)
+    {
+        if (_isClosing || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(
+            DispatcherPriority.Input,
+            new Action(() =>
+            {
+                if (_isClosing)
+                {
+                    return;
+                }
+
+                var invocation = command switch
+                {
+                    YaziBridgeCommandRequest.ContextMenu => YaziShellInvocation.SelectedOrHovered,
+                    YaziBridgeCommandRequest.ContextMenuCurrentDirectory => YaziShellInvocation.CurrentDirectory,
+                    _ => (YaziShellInvocation?)null,
+                };
+                if (invocation is null)
+                {
+                    AppLogger.Log("shell_context_menu_command_unsupported");
+                    return;
+                }
+
+                if (!GetCursorPos(out var cursor))
+                {
+                    AppLogger.Log("shell_context_menu_command_cursor_unavailable");
+                    return;
+                }
+
+                if (!TryQueueShellContextMenu(invocation.Value, cursor.X, cursor.Y))
+                {
+                    AppLogger.Log($"shell_context_menu_command_unavailable_{invocation.Value}");
+                }
+            }));
     }
 
     private void ShowStartupError(string message)

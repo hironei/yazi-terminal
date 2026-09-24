@@ -35,10 +35,12 @@ var tests = new (string Name, Action Test)[]
     ("path request batches remain contiguous", PathRequestBatchesRemainContiguous),
     ("bridge parser accepts a CJK snapshot", BridgeParserAcceptsCjkSnapshot),
     ("bridge parser accepts a command catalog", BridgeParserAcceptsCommandCatalog),
+    ("bridge parser accepts context-menu commands", BridgeParserAcceptsContextMenuCommands),
     ("bridge parser preserves command run sequence", BridgeParserPreservesCommandRunSequence),
     ("bridge parser skips invalid command entries", BridgeParserSkipsInvalidCommandEntries),
     ("bridge parser rejects a wrong instance", BridgeParserRejectsWrongInstance),
     ("bridge reducer applies an ordered update", BridgeReducerAppliesOrderedUpdate),
+    ("bridge reducer accepts context-menu commands without changing state", BridgeReducerAcceptsContextMenuCommands),
     ("bridge reducer invalidates a sequence gap", BridgeReducerInvalidatesSequenceGap),
     ("bridge reducer rejects duplicate snapshots", BridgeReducerRejectsDuplicateSnapshots),
     ("bridge reducer rejects a decreasing snapshot", BridgeReducerRejectsDecreasingSnapshot),
@@ -50,6 +52,7 @@ var tests = new (string Name, Action Test)[]
     ("bridge pipe round-trips a framed message", BridgePipeRoundTripsFrame),
     ("bridge session reconnects after disconnect", BridgeSessionReconnectsAfterDisconnect),
     ("bridge session publishes command catalog", BridgeSessionPublishesCommandCatalog),
+    ("bridge session publishes context-menu requests", BridgeSessionPublishesContextMenuRequests),
     ("bridge session closes a rejected connection", BridgeSessionClosesRejectedConnection),
     ("Phase 2 AC 138 parser accepts valid UTF-8 snapshot", Phase2Ac138ParserAcceptsValidUtf8Snapshot),
     ("Phase 2 AC 139 parser and frame reader reject invalid frames", Phase2Ac139ParserAndFrameReaderRejectInvalidFrames),
@@ -93,6 +96,10 @@ var tests = new (string Name, Action Test)[]
     ("shell target rejects unavailable, URLs, and empty state", ShellTargetRejectsUnavailableUrlsAndEmptyState),
     ("shell target rejects stale bridge state", ShellTargetRejectsStaleBridgeState),
     ("shell target uses monotonic freshness", ShellTargetUsesMonotonicFreshness),
+    ("shell final path resolves item and parent links", ShellFinalPathResolvesItemAndParentLinks),
+    ("shell final path resolves multiple links", ShellFinalPathResolvesMultipleLinks),
+    ("shell final path resolves an actual symbolic link", ShellFinalPathResolvesActualSymbolicLink),
+    ("shell final path rejects link loops at a limit", ShellFinalPathRejectsLinkLoopsAtALimit),
     ("right-click release preserves button-down interception", RightClickReleasePreservesButtonDownInterception),
     ("shell context COM interfaces preserve native vtable order", ShellContextComInterfacesPreserveNativeVtableOrder),
     ("shell context IContextMenu3 forwards LRESULT", ShellContextMenu3ForwardsLresult),
@@ -785,6 +792,25 @@ static void BridgeParserAcceptsCommandCatalog()
     Assert(commands[1].Run == "quit");
 }
 
+static void BridgeParserAcceptsContextMenuCommands()
+{
+    var instanceId = Guid.NewGuid();
+    var message = new YaziBridgeMessageParser().Parse(
+        Frame(
+            instanceId,
+            2,
+            "command",
+            new { command = YaziBridgeCommandRequest.ContextMenuCurrentDirectory }),
+        instanceId);
+
+    Assert(message.Kind == YaziBridgeMessageKind.Command);
+    Assert(YaziBridgeCommandRequestParser.TryParse(message.Payload, out var command));
+    Assert(command == YaziBridgeCommandRequest.ContextMenuCurrentDirectory);
+
+    using var invalid = JsonDocument.Parse("{\"command\":\"shell rm -rf\"}");
+    Assert(!YaziBridgeCommandRequestParser.TryParse(invalid.RootElement, out _));
+}
+
 static void BridgeParserPreservesCommandRunSequence()
 {
     using var document = JsonDocument.Parse("""
@@ -856,6 +882,26 @@ static void BridgeReducerAppliesOrderedUpdate()
     Assert(reducer.State.Selected.Count == 1);
     Assert(reducer.State.Selected[0].Value.EndsWith("選択.txt", StringComparison.Ordinal));
     Assert(reducer.State.Sequence == 2);
+}
+
+static void BridgeReducerAcceptsContextMenuCommands()
+{
+    var instanceId = Guid.NewGuid();
+    var parser = new YaziBridgeMessageParser();
+    var reducer = new YaziBridgeStateReducer(instanceId);
+    reducer.Apply(parser.Parse(HelloFrame(instanceId), instanceId));
+    reducer.Apply(parser.Parse(SnapshotFrame(instanceId, 1), instanceId));
+    reducer.Apply(parser.Parse(
+        Frame(
+            instanceId,
+            2,
+            "command",
+            new { command = YaziBridgeCommandRequest.ContextMenu }),
+        instanceId));
+
+    Assert(!reducer.ConnectionRejected);
+    Assert(reducer.State?.Sequence == 1);
+    Assert(reducer.State?.Availability == YaziBridgeAvailability.Available);
 }
 
 static void BridgeReducerInvalidatesSequenceGap()
@@ -992,6 +1038,10 @@ static void BridgePluginReadsStateBeforeEveryHeartbeat()
     Assert(source.Contains("local changed = not states_equal(last_state, snapshot)", StringComparison.Ordinal));
     Assert(source.Contains("or json_heartbeat(snapshot.tab, last_state_sequence)", StringComparison.Ordinal));
     Assert(source.Contains("elseif not state_read_failed", StringComparison.Ordinal));
+    Assert(source.Contains("entry = function(_, job)", StringComparison.Ordinal));
+    Assert(source.Contains("local request_context_menu = ya and ya.sync", StringComparison.Ordinal));
+    Assert(source.Contains("context-menu-cwd", StringComparison.Ordinal));
+    Assert(source.Contains("send(fd, sequence, \"command\"", StringComparison.Ordinal));
     var normalized = source.Replace("\r\n", "\n", StringComparison.Ordinal);
     Assert(!normalized.Contains("ps.sub(event", StringComparison.Ordinal));
     Assert(!normalized.Contains("state.dirty", StringComparison.Ordinal));
@@ -1151,6 +1201,47 @@ static void BridgeSessionPublishesCommandCatalog()
         Assert(catalogs.Any(catalog => catalog.Count == 1
             && catalog[0] == new YaziBridgeCommand("q", "quit", "Quit")));
         Assert(catalogs[^1].Count == 0);
+    }
+}
+
+static void BridgeSessionPublishesContextMenuRequests()
+{
+    var instanceId = Guid.NewGuid();
+    using var server = new YaziBridgePipeServer(instanceId);
+    var session = new YaziBridgeSession(instanceId, server);
+    var commands = new List<string>();
+    session.CommandRequested += command =>
+    {
+        lock (commands)
+        {
+            commands.Add(command);
+        }
+    };
+
+    var runTask = session.RunAsync();
+    using (var client = ConnectBridgeClient(server.PipeName))
+    {
+        SendFrame(client, HelloFrame(instanceId));
+        SendFrame(client, SnapshotFrame(instanceId, 1));
+        SendFrame(client, Frame(
+            instanceId,
+            2,
+            "command",
+            new { command = YaziBridgeCommandRequest.ContextMenu }));
+        WaitUntil(() =>
+        {
+            lock (commands)
+            {
+                return commands.Contains(YaziBridgeCommandRequest.ContextMenu, StringComparer.Ordinal);
+            }
+        });
+    }
+
+    session.DisposeAsync().AsTask().GetAwaiter().GetResult();
+    runTask.GetAwaiter().GetResult();
+    lock (commands)
+    {
+        Assert(commands.SequenceEqual([YaziBridgeCommandRequest.ContextMenu]));
     }
 }
 
@@ -1866,6 +1957,138 @@ static void ShellTargetUsesMonotonicFreshness()
     Assert(stale.Status == YaziShellTargetStatus.Unavailable);
     Assert(stale.Reason == "bridge-stale");
 }
+
+static void ShellFinalPathResolvesItemAndParentLinks()
+{
+    var probes = new Dictionary<string, WindowsShellFinalPathResolver.LinkTargetProbe>(StringComparer.OrdinalIgnoreCase)
+    {
+        [@"C:\link\file.txt"] = new(true, true, @"D:\real\file.txt"),
+        [@"C:\link"] = new(true, true, @"D:\real"),
+    };
+
+    var itemResolved = WindowsShellFinalPathResolver.TryResolvePath(
+        @"C:\link\file.txt",
+        Probe(probes),
+        WindowsShellFinalPathResolver.MaxLinkResolutions,
+        out var itemPath,
+        out var itemReason);
+    Assert(itemResolved);
+    Assert(itemReason == string.Empty);
+    Assert(itemPath == @"D:\real\file.txt");
+
+    var parentResolved = WindowsShellFinalPathResolver.TryResolvePath(
+        @"C:\link\folder\file.txt",
+        Probe(probes),
+        WindowsShellFinalPathResolver.MaxLinkResolutions,
+        out var parentPath,
+        out _);
+    Assert(parentResolved);
+    Assert(parentPath == @"D:\real\folder\file.txt");
+}
+
+static void ShellFinalPathResolvesMultipleLinks()
+{
+    var probes = new Dictionary<string, WindowsShellFinalPathResolver.LinkTargetProbe>(StringComparer.OrdinalIgnoreCase)
+    {
+        [@"C:\first"] = new(true, true, @"C:\second"),
+        [@"C:\second"] = new(true, true, @"D:\real"),
+    };
+
+    var resolved = WindowsShellFinalPathResolver.TryResolvePath(
+        @"C:\first\folder\file.txt",
+        Probe(probes),
+        WindowsShellFinalPathResolver.MaxLinkResolutions,
+        out var path,
+        out var reason);
+
+    Assert(resolved);
+    Assert(reason == string.Empty);
+    Assert(path == @"D:\real\folder\file.txt");
+}
+
+static void ShellFinalPathResolvesActualSymbolicLink()
+{
+    var directory = Directory.CreateTempSubdirectory("yazi-shell-final-path-");
+    var targetDirectory = Path.Combine(directory.FullName, "target");
+    var linkDirectory = Path.Combine(directory.FullName, "link");
+    var targetFile = Path.Combine(targetDirectory, "item.txt");
+    var linkFile = Path.Combine(directory.FullName, "item-link.txt");
+    Directory.CreateDirectory(targetDirectory);
+    File.WriteAllText(targetFile, "target");
+    try
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(linkDirectory, targetDirectory);
+            File.CreateSymbolicLink(linkFile, targetFile);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return;
+        }
+        catch (IOException)
+        {
+            return;
+        }
+
+        var parentTarget = new YaziShellTarget(
+            YaziShellInvocation.SelectedOrHovered,
+            [Path.Combine(linkDirectory, "item.txt")],
+            1);
+        Assert(WindowsShellFinalPathResolver.TryResolve(
+            parentTarget,
+            out var resolvedParentTarget,
+            out var parentReason));
+        Assert(parentReason == string.Empty);
+        Assert(string.Equals(
+            resolvedParentTarget.Paths.Single(),
+            targetFile,
+            StringComparison.OrdinalIgnoreCase));
+
+        var itemTarget = new YaziShellTarget(
+            YaziShellInvocation.SelectedOrHovered,
+            [linkFile],
+            1);
+        Assert(WindowsShellFinalPathResolver.TryResolve(
+            itemTarget,
+            out var resolvedItemTarget,
+            out var itemReason));
+        Assert(itemReason == string.Empty);
+        Assert(string.Equals(
+            resolvedItemTarget.Paths.Single(),
+            targetFile,
+            StringComparison.OrdinalIgnoreCase));
+    }
+    finally
+    {
+        directory.Delete(recursive: true);
+    }
+}
+
+static void ShellFinalPathRejectsLinkLoopsAtALimit()
+{
+    var probes = new Dictionary<string, WindowsShellFinalPathResolver.LinkTargetProbe>(StringComparer.OrdinalIgnoreCase)
+    {
+        [@"C:\first"] = new(true, true, @"C:\second"),
+        [@"C:\second"] = new(true, true, @"C:\first"),
+    };
+
+    var resolved = WindowsShellFinalPathResolver.TryResolvePath(
+        @"C:\first\file.txt",
+        Probe(probes),
+        2,
+        out _,
+        out var reason);
+
+    Assert(!resolved);
+    Assert(reason == "resolution-limit");
+}
+
+static Func<string, WindowsShellFinalPathResolver.LinkTargetProbe> Probe(
+    IReadOnlyDictionary<string, WindowsShellFinalPathResolver.LinkTargetProbe> probes) =>
+    path => probes.TryGetValue(path, out var probe)
+        ? probe
+        : WindowsShellFinalPathResolver.LinkTargetProbe.NotLink;
 
 static void RightClickReleasePreservesButtonDownInterception()
 {

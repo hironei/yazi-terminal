@@ -2,7 +2,9 @@
 
 The optional Yazi bridge plugin for Yazi Terminal. It publishes Yazi's current
 directory, hovered item, and selection to the host for bridge-backed Shell
-targeting and Explorer drag-and-drop behavior.
+targeting and Explorer drag-and-drop behavior. It also provides the
+`context-menu` and `context-menu-cwd` plugin actions for user-defined manager
+key bindings.
 
 Install it with Yazi's package manager:
 

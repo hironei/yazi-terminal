@@ -11,6 +11,7 @@ public enum YaziBridgeMessageKind
     Hello,
     Snapshot,
     State,
+    Command,
     Goodbye,
     Error,
 }
@@ -38,6 +39,15 @@ public sealed record YaziBridgeCommand(
     public IReadOnlyList<string> ActionSequence => Runs ?? [Run];
 
     public string DisplayRun => string.Join(" → ", ActionSequence);
+}
+
+public static class YaziBridgeCommandRequest
+{
+    public const string ContextMenu = "context-menu";
+    public const string ContextMenuCurrentDirectory = "context-menu-cwd";
+
+    public static bool IsSupported(string? command) => command is
+        ContextMenu or ContextMenuCurrentDirectory;
 }
 
 public sealed record YaziBridgeEnvelope(
@@ -136,6 +146,7 @@ public sealed class YaziBridgeMessageParser
         "hello" => YaziBridgeMessageKind.Hello,
         "snapshot" => YaziBridgeMessageKind.Snapshot,
         "state" => YaziBridgeMessageKind.State,
+        "command" => YaziBridgeMessageKind.Command,
         "goodbye" => YaziBridgeMessageKind.Goodbye,
         "error" => YaziBridgeMessageKind.Error,
         _ => throw new YaziBridgeProtocolException("Bridge message kind is unknown."),
@@ -295,6 +306,29 @@ public sealed class YaziBridgeCommandCatalogParser
         }
 
         return runs;
+    }
+}
+
+public static class YaziBridgeCommandRequestParser
+{
+    public static bool TryParse(JsonElement payload, out string command)
+    {
+        command = string.Empty;
+        if (payload.ValueKind != JsonValueKind.Object
+            || !payload.TryGetProperty("command", out var commandElement)
+            || commandElement.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        var value = commandElement.GetString();
+        if (!YaziBridgeCommandRequest.IsSupported(value))
+        {
+            return false;
+        }
+
+        command = value!;
+        return true;
     }
 }
 
@@ -556,6 +590,13 @@ public sealed class YaziBridgeStateReducer
                 return;
             case YaziBridgeMessageKind.State:
                 ApplyStateUpdate(message);
+                return;
+            case YaziBridgeMessageKind.Command:
+                if (!_handshakeCompleted)
+                {
+                    RejectConnection("handshake-required");
+                }
+
                 return;
             case YaziBridgeMessageKind.Goodbye:
                 MarkUnavailable("goodbye");
