@@ -77,8 +77,8 @@ current user's Yazi plugin directory:
 ```powershell
 $pluginSource = (Resolve-Path 'yazi-desktop-host.yazi').Path
 $pluginDestination = Join-Path $env:APPDATA 'yazi\config\plugins\yazi-desktop-host.yazi'
-New-Item -ItemType Directory -Force -Path (Split-Path $pluginDestination) | Out-Null
-Copy-Item -LiteralPath $pluginSource -Destination $pluginDestination -Recurse -Force
+New-Item -ItemType Directory -Force -Path $pluginDestination | Out-Null
+Copy-Item -Path (Join-Path $pluginSource '*') -Destination $pluginDestination -Recurse -Force
 ```
 
 Add the following line to `%APPDATA%\yazi\config\init.lua`. Merge it with an
@@ -91,8 +91,10 @@ require("yazi-desktop-host"):setup {}
 Restart Yazi Terminal after changing the plugin configuration. The host supplies
 the pipe and instance identifiers to the Yazi child automatically.
 
-For a manual installation, update the plugin by copying the repository
-directory again. To uninstall it, remove the
+For a manual installation, update the plugin by copying its contents with the
+same commands. Copying the directory itself into an existing destination
+would create a nested `yazi-desktop-host.yazi` directory and leave the active
+`main.lua` unchanged. To uninstall it, remove the
 `require("yazi-desktop-host"):setup {}` line from `init.lua` and delete
 `%APPDATA%\yazi\config\plugins\yazi-desktop-host.yazi`.
 
@@ -595,11 +597,11 @@ The same menus can be assigned to any Yazi manager key in `keymap.toml`:
 ```toml
 [[mgr.prepend_keymap]]
 on = ["<C-m>"]
-run = "plugin yazi-desktop-host --args=context-menu"
+run = "plugin yazi-desktop-host -- context-menu"
 
 [[mgr.prepend_keymap]]
 on = ["<C-S-m>"]
-run = "plugin yazi-desktop-host --args=context-menu-cwd"
+run = "plugin yazi-desktop-host -- context-menu-cwd"
 ```
 
 `context-menu` uses the current selection, or the hovered item when there is

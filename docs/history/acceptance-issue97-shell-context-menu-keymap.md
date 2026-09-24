@@ -30,3 +30,20 @@ and are not claimed by headless tests:
 
 These manual checks were not run in this task because no live Yazi/OneDrive
 desktop fixture was available.
+
+## Follow-up on 2026-09-24
+
+- In an isolated Yazi 26.9.1 session, the documented
+  `plugin yazi-desktop-host --args=context-menu` binding reached the plugin
+  with an empty `job.args` table. No command was sent.
+- With `plugin yazi-desktop-host -- context-menu`, `job.args[1]` was
+  `context-menu`, and the plugin sent a `kind = "command"` frame with that
+  payload after the snapshot and heartbeats to a diagnostic named pipe.
+- PowerShell `Copy-Item -LiteralPath $pluginSource -Destination
+  $pluginDestination -Recurse -Force` nested the source folder when the
+  destination directory already existed. The user manual now copies the
+  source contents into the destination for both installation and updates.
+- The user confirmed that two nested plugin directories existed on the other
+  PC and that correcting the active plugin copy made the keymap action work.
+  This is a user-reported GUI result; Junction/SymbolicLink and OneDrive menu
+  behavior were not separately confirmed in this follow-up.

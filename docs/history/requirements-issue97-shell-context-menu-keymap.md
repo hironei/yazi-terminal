@@ -32,9 +32,9 @@ filesystem path when Junctions or SymbolicLinks are present.
 
 ## Functional requirements
 
-1. A Yazi keymap may bind `plugin yazi-desktop-host --args=context-menu` and
+1. A Yazi keymap may bind `plugin yazi-desktop-host -- context-menu` and
    open the selected-or-hovered Shell menu.
-2. A Yazi keymap may bind `plugin yazi-desktop-host --args=context-menu-cwd`
+2. A Yazi keymap may bind `plugin yazi-desktop-host -- context-menu-cwd`
    and open the current-directory Shell menu.
 3. The host resolves all selected paths before evaluating the existing
    same-parent Shell requirement; it never silently falls back to the original
