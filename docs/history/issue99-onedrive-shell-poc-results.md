@@ -43,12 +43,11 @@ menu output or discovered identifier values.
 
 ## Acceptance boundary
 
-The operator confirmed locally through the PoC CLI's explicit invocation mode
-(not by selecting the item in Explorer) that the normal OneDrive folder menu's
-Share action displayed the copied-link confirmation. The sanitized record
-does not retain whether `--invoke-id` or `--invoke-verb` selected the command.
-No menu JSON, path, or discovered identifier was retained here. This manual
-check does not establish behavior on another installation.
+The operator confirmed locally through the PoC CLI's `--invoke-verb` mode
+(not by selecting the item in Explorer or using `--invoke-id`) that the normal
+OneDrive folder menu's Share action displayed the copied-link confirmation.
+No menu JSON, path, or discovered verb was retained here. This manual check
+does not establish behavior on another installation.
 
 Automated checks currently cover compilation, formatting, the existing host
 test suite, and CLI help only; they do not unit-test this tool's parser,
