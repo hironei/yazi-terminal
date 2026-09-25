@@ -557,8 +557,10 @@ unsupported host mappings use built-in fallbacks.
 
 The palette includes the standard Yazi manager action catalog from the pinned
 Yazi/`ya` 26.5.6 compatibility baseline, including standard key bindings,
-descriptions, and multi-action sequences. This is a version-pinned snapshot;
-newer Yazi defaults are not added until the host updates its pinned catalog.
+descriptions, and multi-action sequences. Each binding appears in the upstream
+order, including bindings that run the same action. This is a version-pinned
+snapshot; newer Yazi defaults are not added until the host updates its pinned
+catalog.
 The catalog is for the `[mgr]` context only and does not represent the
 effective merged keymap of a different Yazi version.
 
