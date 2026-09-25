@@ -2852,7 +2852,7 @@ static void CommandPaletteIncludesPinnedYaziManagerCommands()
     var commands = CommandPaletteCommands.WithYaziCommands([]);
 
     Assert(YaziDefaultManagerCommands.PinnedYaziVersion == "26.5.6");
-    Assert(YaziDefaultManagerCommands.Commands.Count == 97);
+    Assert(YaziDefaultManagerCommands.Commands.Count == 107);
     Assert(YaziDefaultManagerCommands.SourcePath.Contains("[mgr].keymap", StringComparison.Ordinal));
     Assert(YaziDefaultManagerCommands.SourceUrl.Contains("/v26.5.6/", StringComparison.Ordinal));
     Assert(CommandPaletteCommands.Filter(commands, "Quit the process").Single().YaziCommand?.Run == "quit");
