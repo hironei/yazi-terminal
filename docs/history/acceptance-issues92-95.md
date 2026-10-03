@@ -58,15 +58,18 @@ foreground state, UI Automation window enumeration, `SendKeys`) were run.
 | --- | --- | --- |
 | #88 bridge environment reaches the Yazi child | PASS | Both Yazi processes under the host carried `YAZI_DESKTOP_HOST_PIPE`, `_INSTANCE_ID`, `_PROTOCOL`, `YAZI_CONFIG_HOME`, `COLORTERM`, `TERM`; the host process itself held none of the `YAZI_DESKTOP_HOST_*` values afterwards. |
 | #88 hello/snapshot | PASS | After key input the host logged `bridge_Available`. |
-| #88 reconnect; non-inheritance by an unrelated host-launched child | UNVERIFIED | Not exercised. |
-| #87 `--last-instance` foreground | PASS (partial) | With the host minimized and another window in front, the second process exited 0 in ~0.6 s, no second host process, and the host became the foreground window. A forced foreground-lock state was not reproduced. |
+| #88 non-inheritance by an unrelated host-launched child | PASS | Notepad launched from the Shell context menu (and its child) held none of the bridge variables. |
+| #88 reconnect | NOT REQUIRED | Owner decision: reconnect behavior need not be tested and may not work. Closing Yazi closes the host (`yazi_normal_exit`), so no in-window reconnect scenario exists. |
+| #87 `--last-instance` foreground | PASS | Scripted: with the host minimized and another window in front, the second process exited 0 in ~0.6 s and the host became foreground. Manual: delayed handoff while another application was being operated activated the host. |
 | #87 no duplicate window for a hung instance | FAIL, then fixed | With the existing host suspended, the second process opened a full second window after the 6 s timeout. Cause: `connected` was set only after the request write completed, and the unbuffered pipe write to a hung server times out first, which classified the result as Rejected. Fixed by treating any accepted connection as owning the request. After the fix the second process logged `last_instance_handoff_unknown`, showed only the warning dialog, and opened no main window. |
 | #87 new window when no instance is reachable | PASS | With a stale `last-instance.json` and no running host, `--last-instance` opened a normal window. |
-| #87 explicit negative acknowledgement | UNVERIFIED | Covered by automated tests only. |
-| #86 heartbeat (new and legacy plugin), stale right-click | UNVERIFIED | Needs Shell menu interaction. |
-| #90 `open --hovered` | UNVERIFIED | Not exercised. |
-| #85 symlink preserved on save | UNVERIFIED | The installed `settings.json` is a symlink and stayed intact and unmodified during the run; no save was triggered to avoid altering the user's settings. |
-| #89 concurrent real-process log rotation | UNVERIFIED | Only the automated concurrent-append and rotation tests ran. |
+| #87 explicit negative acknowledgement | PASS | A handoff sent before Yazi was ready was rejected (`last_instance_request_unavailable`) and the second process opened a normal window. |
+| #86 stale right-click with the new plugin | PASS | Manual: with Yazi suspended, right-click was not handled as a Shell menu; after resuming it was. |
+| #86 legacy plugin without heartbeat | PASS | Manual: with a pre-heartbeat plugin (776c94a) in a copied config, right-click and drag-and-drop still worked after 60 s idle. |
+| #86 drag-and-drop | PASS | Manual: Explorer to Yazi and Yazi to Explorer. |
+| #90 `open --hovered` | PASS | Manual: Settings: Edit opened settings.json and `--last-instance a.txt` opened a.txt, each with another file hovered. |
+| #85 symlink preserved on save | PASS | Manual: after switching to Light Theme the installed `settings.json` stayed a symlink, the target held `"Theme": "Light"`, and no extra files appeared. The setting was restored and matched the backup. |
+| #89 concurrent real-process log rotation | PASS | Six processes appended 400 lines each to one log: all 2400 lines present without rotation; with a 20 KB limit rotation to `.1` occurred with no corrupt or duplicate lines. |
 
 New regression test: `last-instance client treats a stalled request write as
 unknown`. Build: 0 warnings, 0 errors; test suite: all 123 tests pass.
