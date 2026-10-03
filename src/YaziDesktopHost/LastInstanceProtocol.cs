@@ -533,15 +533,16 @@ public static class LastInstanceClient
                 PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
             await client.ConnectAsync(timeoutCancellation.Token).ConfigureAwait(false);
 
+            // Once the server has accepted the connection, the existing
+            // instance owns the request.  A write that stalls or fails midway
+            // (for example because that instance is hung) may still have been
+            // partly delivered, so it must not start a second window.
+            connected = true;
             await LastInstanceFrame.WriteAsync(
                 client,
                 frame,
                 LastInstanceControlProtocol.MaxFrameBytes,
                 timeoutCancellation.Token).ConfigureAwait(false);
-            // Once the request has been fully written, the existing instance
-            // may already have applied it.  From this point onward, a missing
-            // or malformed ACK must not start a second window.
-            connected = true;
             var acknowledgement = await LastInstanceFrame.ReadAsync(
                 client,
                 LastInstanceControlProtocol.MaxFrameBytes,

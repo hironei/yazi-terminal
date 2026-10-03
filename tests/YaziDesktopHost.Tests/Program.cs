@@ -24,6 +24,7 @@ var tests = new (string Name, Action Test)[]
     ("last-instance client falls back for an unreachable endpoint", LastInstanceClientFallsBackForUnreachableEndpoint),
     ("last-instance client rejects invalid endpoint names", LastInstanceClientRejectsInvalidEndpointNames),
     ("last-instance client times out while waiting for ACK", LastInstanceClientTimesOutWhileWaitingForAcknowledgement),
+    ("last-instance client treats a stalled request write as unknown", LastInstanceClientTreatsStalledRequestWriteAsUnknown),
     ("last-instance client treats a closed ACK pipe as unknown", LastInstanceClientTreatsClosedAcknowledgementPipeAsUnknown),
     ("last-instance client rejects an invalid ACK frame", LastInstanceClientRejectsInvalidAcknowledgementFrame),
     ("last-instance control pipe accepts a directory request", LastInstanceControlPipeAcceptsDirectoryRequest),
@@ -446,6 +447,27 @@ static void LastInstanceClientTimesOutWhileWaitingForAcknowledgement()
         CancellationToken.None);
     var status = resultTask.GetAwaiter().GetResult();
     Assert(requestReadTask.GetAwaiter().GetResult() is not null);
+    Assert(status == LastInstanceSendStatus.Unknown);
+}
+
+static void LastInstanceClientTreatsStalledRequestWriteAsUnknown()
+{
+    var pipeName = $"yazi-terminal-control-{Guid.NewGuid():N}";
+    using var server = new NamedPipeServerStream(
+        pipeName,
+        PipeDirection.InOut,
+        1,
+        PipeTransmissionMode.Byte,
+        PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+    var acceptTask = server.WaitForConnectionAsync();
+    var status = LastInstanceClient.SendAsync(
+        new LastInstanceEndpoint(pipeName),
+        @"C:\work",
+        TimeSpan.FromMilliseconds(500)).GetAwaiter().GetResult();
+
+    // The server accepts but never reads, so the unbuffered request write
+    // cannot complete; this models a hung existing instance.
+    Assert(acceptTask.Wait(TimeSpan.FromSeconds(2)));
     Assert(status == LastInstanceSendStatus.Unknown);
 }
 
